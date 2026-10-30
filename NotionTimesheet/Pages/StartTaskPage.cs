@@ -53,21 +53,40 @@ internal sealed partial class StartTaskPage : ListPage
             warning = $"Project list unavailable ({NotionErrors.Describe(ex)}) — you can still start without a project.";
         }
 
-        var items = new List<IListItem>
+        var items = new List<IListItem>();
+
+        var recents = RecentProjectsStore.Load()
+            .Select(recent => projects.FirstOrDefault(p => string.Equals(p.Id, recent.Id, StringComparison.OrdinalIgnoreCase)))
+            .Where(found => found is not null)
+            .Cast<ProjectChoice>()
+            .ToList();
+
+        foreach (var recent in recents)
         {
-            new ListItem(new StartTaskFormPage(settings, client, projects, null, createNewProject: false))
+            items.Add(new ListItem(new StartTaskFormPage(settings, client, projects, recent, createNewProject: false))
             {
-                Title = "No project",
-                Subtitle = "Start the task without an FDD/Project link",
-                Icon = new IconInfo("\uE768"),
-            },
-            new ListItem(new StartTaskFormPage(settings, client, projects, null, createNewProject: true))
-            {
-                Title = "Create new project…",
-                Subtitle = "Adds a page to FDD/Projects, then links it to the task",
-                Icon = new IconInfo("\uE710"), // Add
-            },
-        };
+                Title = recent.Title,
+                Subtitle = "Recent · link this FDD/Project",
+                Icon = new IconInfo("\uE81C"), // History
+                Section = "Recent",
+            });
+        }
+
+        items.Add(new ListItem(new StartTaskFormPage(settings, client, projects, null, createNewProject: false))
+        {
+            Title = "No project",
+            Subtitle = "Start the task without an FDD/Project link",
+            Icon = new IconInfo("\uE768"),
+            Section = "Start",
+        });
+
+        items.Add(new ListItem(new StartTaskFormPage(settings, client, projects, null, createNewProject: true))
+        {
+            Title = "Create new project…",
+            Subtitle = "Adds a page to FDD/Projects, then links it to the task",
+            Icon = new IconInfo("\uE710"), // Add
+            Section = "Start",
+        });
 
         if (warning is not null)
         {
@@ -79,17 +98,19 @@ internal sealed partial class StartTaskPage : ListPage
             });
         }
 
-        foreach (var project in projects)
+        foreach (var project in projects.Where(p => recents.All(r => !string.Equals(r.Id, p.Id, StringComparison.OrdinalIgnoreCase))))
         {
             items.Add(new ListItem(new StartTaskFormPage(settings, client, projects, project, createNewProject: false))
             {
                 Title = project.Title,
                 Subtitle = "Link this FDD/Project",
                 Icon = new IconInfo("\uE8B7"), // Folder
+                Section = "All projects",
             });
         }
 
         return [.. items];
     }
 }
+
 

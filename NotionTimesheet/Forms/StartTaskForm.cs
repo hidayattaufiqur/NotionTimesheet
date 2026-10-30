@@ -78,6 +78,7 @@ internal sealed partial class StartTaskForm : FormContent
         // Project was chosen on the picker page; in "create new" mode the typed name decides.
         // Nothing is created if this step fails.
         string? projectId = project?.Id;
+        string? projectTitle = project?.Title;
         string? projectNote = null;
 
         if (createNewProject)
@@ -94,6 +95,7 @@ internal sealed partial class StartTaskForm : FormContent
             if (exact is not null)
             {
                 projectId = exact.Id;
+                projectTitle = exact.Title;
                 projectNote = $"linked existing project \"{exact.Title}\"";
             }
             else
@@ -105,6 +107,7 @@ internal sealed partial class StartTaskForm : FormContent
                 if (partial.Count == 1)
                 {
                     projectId = partial[0].Id;
+                    projectTitle = partial[0].Title;
                     projectNote = $"linked existing project \"{partial[0].Title}\"";
                 }
                 else if (partial.Count > 1)
@@ -119,6 +122,7 @@ internal sealed partial class StartTaskForm : FormContent
                     {
                         var createdProject = client.CreateProjectAsync(newProjectTitle).GetAwaiter().GetResult();
                         projectId = createdProject.Id;
+                        projectTitle = createdProject.Title;
                         projectNote = $"created project \"{newProjectTitle}\"";
                     }
                     catch (Exception ex)
@@ -128,6 +132,16 @@ internal sealed partial class StartTaskForm : FormContent
                 }
             }
         }
+
+        // Keep what was typed so a rejected submit, or a trip back to the project picker,
+        // does not start from an empty card.
+        DraftStore.Save(new TaskDraft(
+            Title: title,
+            Description: description,
+            Priority: priority,
+            Category: category,
+            Status: status,
+            SavedAt: DateTimeOffset.UtcNow));
 
         var draft = new StartTaskDraft(
             Title: title,
@@ -151,6 +165,12 @@ internal sealed partial class StartTaskForm : FormContent
         try
         {
             var created = client.CreateTaskAsync(draft, start, monthId).GetAwaiter().GetResult();
+            DraftStore.Clear();
+
+            if (!string.IsNullOrWhiteSpace(projectId) && !string.IsNullOrWhiteSpace(projectTitle))
+            {
+                RecentProjectsStore.Remember(new ProjectChoice(projectId, projectTitle));
+            }
 
             var message = $"Started \"{title}\" at {Clock.Time(start)} WIB";
             if (projectNote is not null)
@@ -209,6 +229,14 @@ internal sealed partial class StartTaskForm : FormContent
     private string BuildCard()
     {
         var now = Clock.Now();
+        var draft = DraftStore.TryGet();
+
+        var titleValue = draft?.Title ?? string.Empty;
+        var descriptionValue = draft?.Description ?? string.Empty;
+        var priorityDefault = Pick(draft?.Priority, NotionIds.Priorities, NotionIds.DefaultPriority);
+        var categoryDefault = Pick(draft?.Category, NotionIds.Categories, NotionIds.DefaultCategory);
+        var statusDefault = Pick(draft?.Status, NotionIds.Statuses,
+            string.IsNullOrWhiteSpace(defaultStatus) ? NotionIds.DefaultStatus : defaultStatus);
 
         var body = new JsonArray
         {
@@ -226,6 +254,7 @@ internal sealed partial class StartTaskForm : FormContent
                 ["id"] = "title",
                 ["label"] = "Task title",
                 ["placeholder"] = "What are you working on?",
+                ["value"] = titleValue,
                 ["isRequired"] = true,
                 ["errorMessage"] = "A task title is required.",
                 ["style"] = "text",
@@ -236,11 +265,12 @@ internal sealed partial class StartTaskForm : FormContent
                 ["id"] = "description",
                 ["label"] = "Description (optional)",
                 ["placeholder"] = "Short note for the timesheet",
+                ["value"] = descriptionValue,
                 ["isMultiline"] = true,
                 ["style"] = "text",
             },
-            ChoiceSet("priority", "Priority", NotionIds.Priorities.Select(option => (option, option)), NotionIds.DefaultPriority),
-            ChoiceSet("category", "Category", NotionIds.Categories.Select(option => (option, option)), NotionIds.DefaultCategory),
+            ChoiceSet("priority", "Priority", NotionIds.Priorities.Select(option => (option, option)), priorityDefault),
+            ChoiceSet("category", "Category", NotionIds.Categories.Select(option => (option, option)), categoryDefault),
         };
 
         if (createNewProject)
@@ -257,11 +287,14 @@ internal sealed partial class StartTaskForm : FormContent
             });
         }
 
-        body.Add(ChoiceSet(
-            "status",
-            "Status",
-            NotionIds.Statuses.Select(option => (option, option)),
-            string.IsNullOrWhiteSpace(defaultStatus) ? NotionIds.DefaultStatus : defaultStatus));
+        body.Add(ChoiceSet("status", "Status", NotionIds.Statuses.Select(option => (option, option)), statusDefault));
+
+        if (draft is not null)
+        {
+            body.Add(TextBlock(
+                $"Restored what you typed at {draft.SavedAt.ToOffset(Clock.WibOffset):HH:mm} WIB.",
+                isSubtle: true));
+        }
 
 
         var card = new JsonObject

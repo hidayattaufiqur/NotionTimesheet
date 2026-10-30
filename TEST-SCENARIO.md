@@ -47,6 +47,18 @@ today, Priority `Crucial`, Category `Comlab`, Status `Do Today`, Month linked to
 row's `FDD/Project` points at it. Repeating with the same name links the existing page
 (`linked existing project …`).
 
+## Test 1c — recents and draft restore
+
+1. After a successful start with a project, run `start task` again.
+2. The picker now shows that project at the top under **Recent**, and it no longer appears in the
+   **All projects** section.
+3. Pick it, type a title but leave **Status** on `Do Today` and submit with something that fails
+   (e.g. a bogus `New FDD/Project name` when in create mode, or just let a 5-match ambiguity
+   happen) — then go back to the picker and pick another project.
+
+**Expected:** the form reopens with the title/description you typed and a subtle
+`Restored what you typed at HH:mm WIB` line. A successful create clears the draft.
+
 ## Test 2 — Empty title is blocked
 1. `Alt+Space` → `start task` → `Enter`.
 2. Leave **Task title** empty, press the **Start task** action.

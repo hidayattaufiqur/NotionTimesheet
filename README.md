@@ -11,6 +11,13 @@ Notes on the Start task card:
 
 - **Status** preselects `Do Today` (changeable in *Settings*, per extension).
 - **Month** is resolved from the exact timestamp written to `Start Time` — a task started at 00:30 on the 1st links the new month. The resolved id is cached per calendar month; an ambiguous or missing month leaves the relation empty and says so in the confirmation toast.
+- **Recent projects** are pinned at the top of the picker (`Section: Recent`, newest first, max 3,
+  persisted in `%LOCALAPPDATA%\CmdPalNotion\recent-projects.json`) and removed from the full list
+  below to avoid duplicates.
+- **Drafts survive a detour**: the form saves what you typed whenever you submit, so a rejected
+  submit — or picking a different project after a failed one — reopens with the title,
+  description, priority, category and status filled in (`Restored what you typed at HH:mm WIB`).
+  It clears on a successful create and expires after 30 minutes.
 - **FDD/Project** is chosen *before* the form, on a normal list page, because that is the only
   place where typing filters live: type `13396`, the list narrows to
   `CR 13396 - NOR - EHF - Equinor Feedback`, press Enter, and the form opens bound to it.
