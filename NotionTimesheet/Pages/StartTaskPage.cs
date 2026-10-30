@@ -33,7 +33,7 @@ internal sealed partial class StartTaskPage : ContentPage
         string? warning = null;
         try
         {
-            projects = client.ListRecentProjects();
+            projects = client.ListProjects();
         }
         catch (Exception ex)
         {

@@ -23,8 +23,8 @@ Before you start: `%LOCALAPPDATA%\CmdPalNotion\token.txt` must exist with the in
    * Description: `manual acceptance run`
    * Priority: `Crucial`
    * Category: `Comlab`
-   * FDD/Project: pick any project (or leave `No project`)
-   * Status: `Do Today`
+   * FDD/Project: type a few letters to filter, pick any project (or `No project`)
+   * Status: leave the default — it must now be **Do Today**
 4. Click the **Start task** action at the bottom of the card.
 
 **Expected:** a toast like
@@ -35,8 +35,20 @@ and the palette returns to the search page.
 today, Priority `Crucial`, Category `Comlab`, Status `Do Today`, Month linked to the
 `October 2026` row.
 
-## Test 2 — Empty title is blocked
+## Test 1b — project search and create-new
 
+1. `start task` again.
+2. In **FDD/Project**, type a few characters — the list should filter as you type (it now
+   loads all 112 project pages, not the 25 most recent).
+3. Pick nothing there; instead put a fresh name in **New FDD/Project name**, e.g.
+   `ZZ MANUAL TEST PROJECT — delete me`.
+4. Submit.
+
+**Expected:** toast mentions `created project "ZZ MANUAL TEST PROJECT — delete me"`, the task
+row is created, and `FDD/Project` points at a new page in the FDD/Projects database. Repeating
+the same name links the existing page instead (toast says `linked existing project`).
+
+## Test 2 — Empty title is blocked
 1. `Alt+Space` → `start task` → `Enter`.
 2. Leave **Task title** empty, press the **Start task** action.
 

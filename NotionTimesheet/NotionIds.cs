@@ -29,7 +29,7 @@ internal static class NotionIds
 
     public const string DefaultPriority = "Medium";
     public const string DefaultCategory = "Nine Dots";
-    public const string DefaultStatus = "Do Later";
+    public const string DefaultStatus = "Do Today";
 
     public const string CompletedStatus = "Completed";
     public const string ProjectRelationProperty = "FDD/Project";

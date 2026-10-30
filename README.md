@@ -4,8 +4,14 @@ Start and finish Notion **Tasks Kanban** timers without opening Notion.
 
 | Command | What it does |
 |---|---|
-| **Start task** | Adaptive Card form (title, description, priority, category, FDD/Project, status). On submit it creates a Tasks Kanban row with `Start Time` = submit moment (`+07:00`), `Timeline Date` = today, `Month` resolved by name (`October 2026`), plus the picked fields. |
+| **Start task** | Adaptive Card form (title, description, priority, category, FDD/Project, status). On submit it creates a Tasks Kanban row with `Start Time` = submit moment (`+07:00`), `Timeline Date` = today, `Month` resolved from that same timestamp (`October 2026`), plus the picked fields. Status defaults to **Do Today**. The project picker lists every FDD/Project page (type to filter); typing a name that is not in the list creates the project page and links it. |
 | **Finish task** | Live list of `In-Progress` and `Do Today` rows (with an explicit **Refresh list** item). Invoking a row PATCHes `End Time` = now, `Status` = `Completed`, and backfills `Start Time` if it was empty. |
+
+Notes on the Start task card:
+
+- **Status** preselects `Do Today` (changeable in *Settings*, per extension).
+- **Month** is resolved from the exact timestamp written to `Start Time` — a task started at 00:30 on the 1st links the new month. The resolved id is cached per calendar month; an ambiguous or missing month leaves the relation empty and says so in the confirmation toast.
+- **FDD/Project** loads every non-trashed project page (paginated), uses a filtered/typeahead choice set, and has a separate *New FDD/Project name* field: an exact-title match is reused, otherwise the page is created in the FDD/Projects data source and linked. If that create fails, no task row is created.
 
 ---
 

@@ -15,6 +15,7 @@ internal sealed partial class StartTaskForm : FormContent
 {
     private readonly NotionClient client;
     private readonly string defaultStatus;
+    private readonly IReadOnlyList<ProjectChoice> projects;
 
     public StartTaskForm(
         NotionClient client,
@@ -24,6 +25,7 @@ internal sealed partial class StartTaskForm : FormContent
     {
         this.client = client;
         this.defaultStatus = defaultStatus;
+        this.projects = projects;
         TemplateJson = BuildCard(projects, projectLoadWarning);
     }
 
@@ -52,6 +54,37 @@ internal sealed partial class StartTaskForm : FormContent
         var status = Pick(ReadString(inputs, "status"), NotionIds.Statuses, defaultStatus);
         var project = ReadString(inputs, "project");
         var projectId = string.IsNullOrWhiteSpace(project) || project == "none" ? null : project;
+        var newProjectTitle = ReadString(inputs, "projectNew")?.Trim();
+
+        var start = Clock.Now();
+
+        // A typed project name wins over the dropdown: reuse an existing page with that exact
+        // title, otherwise create it, then link it. Nothing is created if this step fails.
+        string? projectNote = null;
+        if (!string.IsNullOrWhiteSpace(newProjectTitle))
+        {
+            try
+            {
+                var existing = projects.FirstOrDefault(p =>
+                    string.Equals(p.Title.Trim(), newProjectTitle, StringComparison.OrdinalIgnoreCase));
+
+                if (existing is not null)
+                {
+                    projectId = existing.Id;
+                    projectNote = $"linked existing project \"{existing.Title}\"";
+                }
+                else
+                {
+                    var createdProject = client.CreateProjectAsync(newProjectTitle).GetAwaiter().GetResult();
+                    projectId = createdProject.Id;
+                    projectNote = $"created project \"{newProjectTitle}\"";
+                }
+            }
+            catch (Exception ex)
+            {
+                return Fail($"Nothing was created. The FDD/Project \"{newProjectTitle}\" could not be created: {NotionErrors.Describe(ex)}");
+            }
+        }
 
         var draft = new StartTaskDraft(
             Title: title,
@@ -60,8 +93,6 @@ internal sealed partial class StartTaskForm : FormContent
             Category: category,
             Status: status,
             ProjectPageId: projectId);
-
-        var start = Clock.Now();
 
         string? monthId = null;
         string? monthWarning = null;
@@ -79,6 +110,11 @@ internal sealed partial class StartTaskForm : FormContent
             var created = client.CreateTaskAsync(draft, start, monthId).GetAwaiter().GetResult();
 
             var message = $"Started \"{title}\" at {Clock.Time(start)} WIB";
+            if (projectNote is not null)
+            {
+                message += $" — {projectNote}";
+            }
+
             if (monthWarning is not null)
             {
                 message += $" — {monthWarning}";
@@ -157,9 +193,21 @@ internal sealed partial class StartTaskForm : FormContent
             ChoiceSet("category", "Category", NotionIds.Categories.Select(option => (option, option)), NotionIds.DefaultCategory),
             ChoiceSet(
                 "project",
-                "FDD/Project (optional)",
+                "FDD/Project (optional) — type to search",
                 ProjectOptions(projects),
-                "none"),
+                "none",
+                style: "filtered"),
+            TextBlock(
+                "Not in the list? Type a name on the next line — an existing project with that title is linked, otherwise it is created in the FDD/Projects database.",
+                isSubtle: true),
+            new JsonObject
+            {
+                ["type"] = "Input.Text",
+                ["id"] = "projectNew",
+                ["label"] = "New FDD/Project name (optional)",
+                ["placeholder"] = "Leave empty to use the selection above",
+                ["style"] = "text",
+            },
             ChoiceSet(
                 "status",
                 "Status",
@@ -245,7 +293,8 @@ internal sealed partial class StartTaskForm : FormContent
         string id,
         string label,
         IEnumerable<(string Title, string Value)> options,
-        string defaultValue)
+        string defaultValue,
+        string style = "compact")
     {
         var choices = new JsonArray();
         var hasDefault = false;
@@ -274,7 +323,7 @@ internal sealed partial class StartTaskForm : FormContent
             ["type"] = "Input.ChoiceSet",
             ["id"] = id,
             ["label"] = label,
-            ["style"] = "compact",
+            ["style"] = style,
             ["value"] = defaultValue,
             ["choices"] = choices,
         };

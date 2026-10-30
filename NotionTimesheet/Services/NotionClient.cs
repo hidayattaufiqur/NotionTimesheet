@@ -30,12 +30,16 @@ internal sealed class NotionClient
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(20) };
 
     private static readonly object MonthCacheLock = new();
-    private static DateOnly monthCacheDay;
     private static string? monthCacheId;
-    private static bool monthCachePopulated;
+    private static string? monthCacheKey;
+    private static readonly object ProjectCacheLock = new();
+    private static IReadOnlyList<ProjectChoice>? projectCache;
+    private static DateTimeOffset projectCacheFetchedAt;
+
+    private static readonly TimeSpan ProjectCacheLifetime = TimeSpan.FromMinutes(5);
 
     private readonly string token;
-    private string? monthTitleProperty;
+    private readonly Dictionary<string, string> titlePropertyCache = [];
 
     public NotionClient(string token)
     {
@@ -165,87 +169,145 @@ internal sealed class NotionClient
         await SendAsync(new HttpMethod("PATCH"), $"/pages/{pageId}", payload, cancellationToken).ConfigureAwait(false);
     }
 
-    public IReadOnlyList<ProjectChoice> ListRecentProjects(int limit = 25, CancellationToken cancellationToken = default)
+    /// <summary>All FDD/Project pages, newest edits first. Cached for 5 minutes.</summary>
+    public IReadOnlyList<ProjectChoice> ListProjects(bool forceRefresh = false, CancellationToken cancellationToken = default)
     {
-        var payload = new JsonObject
+        lock (ProjectCacheLock)
         {
-            ["sorts"] = new JsonArray(new JsonObject
+            if (!forceRefresh && projectCache is not null &&
+                DateTimeOffset.UtcNow - projectCacheFetchedAt < ProjectCacheLifetime)
             {
-                ["timestamp"] = "last_edited_time",
-                ["direction"] = "descending",
-            }),
-            ["page_size"] = limit,
-        };
-
-        var response = SendAsync(HttpMethod.Post, $"/data_sources/{NotionIds.FddDataSourceId}/query", payload, cancellationToken)
-            .GetAwaiter().GetResult();
+                return projectCache;
+            }
+        }
 
         var projects = new List<ProjectChoice>();
-        if (response["results"] is JsonArray results)
+        string? cursor = null;
+
+        for (var page = 0; page < 20; page++)
         {
-            foreach (var page in results)
+            var payload = new JsonObject
             {
-                if (page is not JsonObject obj)
+                ["sorts"] = new JsonArray(new JsonObject
                 {
-                    continue;
-                }
+                    ["timestamp"] = "last_edited_time",
+                    ["direction"] = "descending",
+                }),
+                ["page_size"] = 100,
+            };
 
-                var id = obj["id"]?.GetValue<string>();
-                if (string.IsNullOrWhiteSpace(id))
-                {
-                    continue;
-                }
-
-                projects.Add(new ProjectChoice(id, PageTitle(obj) ?? "(untitled project)"));
+            if (!string.IsNullOrWhiteSpace(cursor))
+            {
+                payload["start_cursor"] = cursor;
             }
+
+            var response = SendAsync(HttpMethod.Post, $"/data_sources/{NotionIds.FddDataSourceId}/query", payload, cancellationToken)
+                .GetAwaiter().GetResult();
+
+            if (response["results"] is JsonArray results)
+            {
+                foreach (var pageNode in results)
+                {
+                    if (pageNode is not JsonObject obj || obj["in_trash"]?.GetValue<bool>() == true)
+                    {
+                        continue;
+                    }
+
+                    var id = obj["id"]?.GetValue<string>();
+                    if (string.IsNullOrWhiteSpace(id))
+                    {
+                        continue;
+                    }
+
+                    projects.Add(new ProjectChoice(id, PageTitle(obj) ?? "(untitled project)"));
+                }
+            }
+
+            cursor = response["next_cursor"]?.GetValue<string>();
+            if (response["has_more"]?.GetValue<bool>() != true || string.IsNullOrWhiteSpace(cursor))
+            {
+                break;
+            }
+        }
+
+        lock (ProjectCacheLock)
+        {
+            projectCache = projects;
+            projectCacheFetchedAt = DateTimeOffset.UtcNow;
         }
 
         return projects;
     }
 
     /// <summary>
-    /// Resolves the "October 2026" style Month row. Cached per calendar day (task-local
-    /// cache: the extension process is a single long-lived COM server).
+    /// Creates an FDD/Project page. "Archived" is left at its default; only the title is set,
+    /// which is all the Task relation needs.
+    /// </summary>
+    public async Task<ProjectChoice> CreateProjectAsync(string title, CancellationToken cancellationToken = default)
+    {
+        var titleProperty = await FindTitlePropertyAsync(NotionIds.FddDataSourceId, cancellationToken).ConfigureAwait(false);
+
+        var payload = new JsonObject
+        {
+            ["parent"] = new JsonObject { ["data_source_id"] = NotionIds.FddDataSourceId },
+            ["properties"] = new JsonObject
+            {
+                [titleProperty] = new JsonObject
+                {
+                    ["title"] = new JsonArray(TextObject(title)),
+                },
+            },
+        };
+
+        var page = await SendAsync(HttpMethod.Post, "/pages", payload, cancellationToken).ConfigureAwait(false);
+        var id = page["id"]?.GetValue<string>()
+            ?? throw new NotionApiException("Notion accepted the project page but returned no id.", 200, null);
+
+        lock (ProjectCacheLock)
+        {
+            projectCacheFetchedAt = DateTimeOffset.MinValue;
+        }
+
+        return new ProjectChoice(id, title);
+    }
+
+    /// <summary>
+    /// Resolves the "October 2026" Month row for the timestamp written into Start Time.
+    /// Cached per calendar month (the extension process is a single long-lived COM server).
     /// </summary>
     public async Task<(string? MonthId, string? Warning)> ResolveMonthAsync(
-        DateTimeOffset now,
+        DateTimeOffset start,
         CancellationToken cancellationToken = default)
     {
-        var today = DateOnly.FromDateTime(now.DateTime);
+        var monthName = Clock.MonthName(start);
+        var cacheKey = start.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
+
         lock (MonthCacheLock)
         {
-            if (monthCachePopulated && monthCacheDay == today)
+            if (monthCacheKey == cacheKey)
             {
                 return (monthCacheId, null);
             }
         }
 
-        var monthName = Clock.MonthName(now);
-        monthTitleProperty ??= await FindTitlePropertyAsync(NotionIds.MonthDataSourceId, cancellationToken).ConfigureAwait(false);
+        var titleProperty = await FindTitlePropertyAsync(NotionIds.MonthDataSourceId, cancellationToken).ConfigureAwait(false);
 
-        var payload = new JsonObject
+        var exact = await QueryMonthRowsAsync(titleProperty, monthName, "equals", cancellationToken).ConfigureAwait(false);
+        var matches = FilterByExactTitle(exact, monthName);
+
+        if (matches.Count == 0)
         {
-            ["filter"] = new JsonObject
-            {
-                ["property"] = monthTitleProperty,
-                ["title"] = new JsonObject { ["equals"] = monthName },
-            },
-            ["page_size"] = 5,
-        };
+            // Row titled with a suffix/prefix (e.g. "October 2026 (WIP)") still counts if only one matches.
+            var broader = await QueryMonthRowsAsync(titleProperty, monthName, "contains", cancellationToken).ConfigureAwait(false);
+            matches = FilterByExactTitle(broader, monthName);
+        }
 
-        var response = await SendAsync(
-            HttpMethod.Post,
-            $"/data_sources/{NotionIds.MonthDataSourceId}/query",
-            payload,
-            cancellationToken).ConfigureAwait(false);
-
-        var matches = response["results"] as JsonArray ?? new JsonArray();
         string? id = null;
         string? warning = null;
 
         if (matches.Count == 1)
         {
-            id = matches[0]?["id"]?.GetValue<string>();
+            id = matches[0]["id"]?.GetValue<string>();
         }
         else if (matches.Count == 0)
         {
@@ -256,21 +318,54 @@ internal sealed class NotionClient
             warning = $"{matches.Count} Month rows match \"{monthName}\" — Month left unlinked to avoid guessing.";
         }
 
-        if (!string.IsNullOrWhiteSpace(id))
+        lock (MonthCacheLock)
         {
-            lock (MonthCacheLock)
-            {
-                monthCacheId = id;
-                monthCacheDay = today;
-                monthCachePopulated = true;
-            }
+            monthCacheId = id;
+            monthCacheKey = id is null ? null : cacheKey;
         }
 
         return (id, warning);
     }
 
+    private async Task<JsonArray> QueryMonthRowsAsync(
+        string titleProperty,
+        string monthName,
+        string match,
+        CancellationToken cancellationToken)
+    {
+        var payload = new JsonObject
+        {
+            ["filter"] = new JsonObject
+            {
+                ["property"] = titleProperty,
+                ["title"] = new JsonObject { [match] = monthName },
+            },
+            ["page_size"] = 20,
+        };
+
+        var response = await SendAsync(
+            HttpMethod.Post,
+            $"/data_sources/{NotionIds.MonthDataSourceId}/query",
+            payload,
+            cancellationToken).ConfigureAwait(false);
+
+        return response["results"] as JsonArray ?? new JsonArray();
+    }
+
+    private static List<JsonObject> FilterByExactTitle(JsonArray rows, string monthName) =>
+        rows
+            .OfType<JsonObject>()
+            .Where(row => row["in_trash"]?.GetValue<bool>() != true)
+            .Where(row => string.Equals(PageTitle(row)?.Trim(), monthName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
     private async Task<string> FindTitlePropertyAsync(string dataSourceId, CancellationToken cancellationToken)
     {
+        if (titlePropertyCache.TryGetValue(dataSourceId, out var cached))
+        {
+            return cached;
+        }
+
         try
         {
             var dataSource = await SendAsync(HttpMethod.Get, $"/data_sources/{dataSourceId}", null, cancellationToken).ConfigureAwait(false);
@@ -280,6 +375,7 @@ internal sealed class NotionClient
                 {
                     if (property.Value?["type"]?.GetValue<string>() == "title")
                     {
+                        titlePropertyCache[dataSourceId] = property.Key;
                         return property.Key;
                     }
                 }
