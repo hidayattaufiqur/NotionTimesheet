@@ -1,0 +1,26 @@
+## Build output
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+.vs/
+*.user
+*.suo
+*.binlog
+artifacts/
+
+## MSIX output
+AppPackages/
+*.appx
+*.msix
+*.msixupload
+*.cer
+*.pfx
+
+## Tooling
+.vscode/
+.idea/
+
+# NOTE: Do NOT ignore Properties/launchSettings.json or *.pubxml.
+# The Windows App SDK packaging/deploy targets depend on both, and the Command
+# Palette docs explicitly ask for them to stay in source control.

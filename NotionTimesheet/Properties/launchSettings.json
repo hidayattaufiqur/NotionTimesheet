@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "NotionTimesheet (Package)": {
+      "commandName": "MsixPackage",
+      "doNotLaunchApp": true
+    },
+    "NotionTimesheet (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
+

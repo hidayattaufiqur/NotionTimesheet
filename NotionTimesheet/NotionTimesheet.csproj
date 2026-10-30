@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>NotionTimesheet</RootNamespace>
+    <AssemblyName>NotionTimesheet</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <WindowsSdkPackageVersion>10.0.26100.69</WindowsSdkPackageVersion>
+    <TargetFramework>net9.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+
+    <PublishProfile>win-$(Platform).pubxml</PublishProfile>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!--
+      This box has no machine-local Windows SDK (only the NETFX SDK), so the MSIX
+      build targets cannot run: they need Windows Kits\10\...\Platforms\UAP\UAP.props.
+      The MSIX is therefore packed by build\Pack-Msix.ps1 using MakeAppx/SignTool from
+      the Microsoft.Windows.SDK.BuildTools package. Keep Package.appxmanifest and the
+      Assets as the single source of truth for the package identity.
+    -->
+    <EnableMsixTooling>false</EnableMsixTooling>
+    <GenerateAppxPackageOnBuild>false</GenerateAppxPackageOnBuild>
+
+    <!-- The Microsoft.CommandPalette.Extensions package already ships the CsWinRT-generated
+         projections (ABI.* types) inside Microsoft.CommandPalette.Extensions.Toolkit.dll.
+         Regenerating them needs a machine-local Windows SDK, so the projection step is
+         skipped and the package projections are used as-is. -->
+    <CsWinRTEnabled Condition="'$(CsWinRTEnabled)' == ''">false</CsWinRTEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\*.png" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Manifest Include="$(ApplicationManifest)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CommandPalette.Extensions" />
+    <PackageReference Include="Microsoft.Windows.CsWinRT" />
+    <PackageReference Include="Shmuelie.WinRTServer" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>
+
