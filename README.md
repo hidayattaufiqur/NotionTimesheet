@@ -11,7 +11,12 @@ Notes on the Start task card:
 
 - **Status** preselects `Do Today` (changeable in *Settings*, per extension).
 - **Month** is resolved from the exact timestamp written to `Start Time` — a task started at 00:30 on the 1st links the new month. The resolved id is cached per calendar month; an ambiguous or missing month leaves the relation empty and says so in the confirmation toast.
-- **FDD/Project** loads every non-trashed project page (paginated), uses a filtered/typeahead choice set, and has a separate *New FDD/Project name* field: an exact-title match is reused, otherwise the page is created in the FDD/Projects data source and linked. If that create fails, no task row is created.
+- **FDD/Project** loads every non-trashed project page (paginated) into a normal dropdown, plus a
+  **FDD/Project name (search or create)** field: an exact title is reused, a unique substring match
+  is linked (`linked existing project "CR 13396 …"`), several matches ask you to be more specific,
+  and no match creates the page in the FDD/Projects data source. If that create fails, no task row
+  is created. Type-to-search *inside* the dropdown was tried (`Input.ChoiceSet`
+  `style: filtered`) and Command Palette drops the keystrokes, so search lives in the text field.
 
 ---
 
@@ -142,4 +147,5 @@ NotionTimesheet/
   `build\Pack-Msix.ps1` replaces it (real signed MSIX, registered per user).
 * `Microsoft.CommandPalette.Extensions.Toolkit` is not a separate NuGet package; it ships inside
   `Microsoft.CommandPalette.Extensions`.
+
 

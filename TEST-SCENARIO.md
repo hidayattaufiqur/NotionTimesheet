@@ -38,15 +38,15 @@ today, Priority `Crucial`, Category `Comlab`, Status `Do Today`, Month linked to
 ## Test 1b — project search and create-new
 
 1. `start task` again.
-2. In **FDD/Project**, type a few characters — the list should filter as you type (it now
-   loads all 112 project pages, not the 25 most recent).
-3. Pick nothing there; instead put a fresh name in **New FDD/Project name**, e.g.
-   `ZZ MANUAL TEST PROJECT — delete me`.
+2. **FDD/Project** dropdown now lists all 112 project pages (scrollable, no typeahead — the
+   palette ignores Adaptive Cards' filtered style).
+3. In **FDD/Project name (search or create)** type `13396`.
 4. Submit.
 
-**Expected:** toast mentions `created project "ZZ MANUAL TEST PROJECT — delete me"`, the task
-row is created, and `FDD/Project` points at a new page in the FDD/Projects database. Repeating
-the same name links the existing page instead (toast says `linked existing project`).
+**Expected:** toast says `linked existing project "CR 13396 - NOR - EHF - Equinor Feedback"`, and
+the task row's `FDD/Project` points at that existing page (no duplicate created).
+Also try a name that matches nothing, e.g. `ZZ MANUAL TEST PROJECT — delete me` → toast says
+`created project …` and a new page appears in FDD/Projects.
 
 ## Test 2 — Empty title is blocked
 1. `Alt+Space` → `start task` → `Enter`.

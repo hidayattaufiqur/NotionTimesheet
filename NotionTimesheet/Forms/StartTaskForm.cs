@@ -63,26 +63,43 @@ internal sealed partial class StartTaskForm : FormContent
         string? projectNote = null;
         if (!string.IsNullOrWhiteSpace(newProjectTitle))
         {
-            try
-            {
-                var existing = projects.FirstOrDefault(p =>
-                    string.Equals(p.Title.Trim(), newProjectTitle, StringComparison.OrdinalIgnoreCase));
+            var exact = projects.FirstOrDefault(p =>
+                string.Equals(p.Title.Trim(), newProjectTitle, StringComparison.OrdinalIgnoreCase));
 
-                if (existing is not null)
+            if (exact is not null)
+            {
+                projectId = exact.Id;
+                projectNote = $"linked existing project \"{exact.Title}\"";
+            }
+            else
+            {
+                var partial = projects
+                    .Where(p => p.Title.Contains(newProjectTitle, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                if (partial.Count == 1)
                 {
-                    projectId = existing.Id;
-                    projectNote = $"linked existing project \"{existing.Title}\"";
+                    projectId = partial[0].Id;
+                    projectNote = $"linked existing project \"{partial[0].Title}\"";
+                }
+                else if (partial.Count > 1)
+                {
+                    var sample = string.Join(", ", partial.Take(3).Select(p => $"\"{p.Title}\""));
+                    return Fail($"Nothing was created. \"{newProjectTitle}\" matches {partial.Count} projects: {sample}. Pick one in the list or type more of the name.");
                 }
                 else
                 {
-                    var createdProject = client.CreateProjectAsync(newProjectTitle).GetAwaiter().GetResult();
-                    projectId = createdProject.Id;
-                    projectNote = $"created project \"{newProjectTitle}\"";
+                    try
+                    {
+                        var createdProject = client.CreateProjectAsync(newProjectTitle).GetAwaiter().GetResult();
+                        projectId = createdProject.Id;
+                        projectNote = $"created project \"{newProjectTitle}\"";
+                    }
+                    catch (Exception ex)
+                    {
+                        return Fail($"Nothing was created. The FDD/Project \"{newProjectTitle}\" could not be created: {NotionErrors.Describe(ex)}");
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                return Fail($"Nothing was created. The FDD/Project \"{newProjectTitle}\" could not be created: {NotionErrors.Describe(ex)}");
             }
         }
 
@@ -193,19 +210,18 @@ internal sealed partial class StartTaskForm : FormContent
             ChoiceSet("category", "Category", NotionIds.Categories.Select(option => (option, option)), NotionIds.DefaultCategory),
             ChoiceSet(
                 "project",
-                "FDD/Project (optional) — type to search",
+                "FDD/Project (optional)",
                 ProjectOptions(projects),
-                "none",
-                style: "filtered"),
+                "none"),
             TextBlock(
-                "Not in the list? Type a name on the next line — an existing project with that title is linked, otherwise it is created in the FDD/Projects database.",
+                "Type part of a project name below: a unique match is linked, several matches ask you to be more specific, no match creates it in the FDD/Projects database.",
                 isSubtle: true),
             new JsonObject
             {
                 ["type"] = "Input.Text",
                 ["id"] = "projectNew",
-                ["label"] = "New FDD/Project name (optional)",
-                ["placeholder"] = "Leave empty to use the selection above",
+                ["label"] = "FDD/Project name (search or create)",
+                ["placeholder"] = "e.g. 13396, OSMT, NeoMax…",
                 ["style"] = "text",
             },
             ChoiceSet(
