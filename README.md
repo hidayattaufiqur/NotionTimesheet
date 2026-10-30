@@ -68,8 +68,13 @@ with the code-signing cert and registers the package for the current user.
 `-Version` stamps `Identity/@Version` **in the packaged `AppxManifest.xml` only** — the
 `Package.appxmanifest` in git stays at its baseline, so every install is a clean upgrade instead
 of relying on `-ForceUpdateFromAnyVersion`. Without `-Version` the manifest value is used and the
-script warns when it is not newer than what is installed. Installation always uses
-`-ForceApplicationShutdown` because Command Palette keeps the extension process alive.
+script warns when it is not newer than what is installed.
+
+Installation is a **clean reinstall**: the previous package is removed and the new MSIX added.
+Overwriting in place leaves the old package full name in Command Palette's extension catalog, and
+each reload then loads another copy of the commands (two `Start task` rows, then three). After a
+version change, fully restart Command Palette once — `Reload Command Palette extensions` alone
+does not purge an already-listed old version.
 
 Signing identity: `CN=Nine Dots Consulting`, thumbprint
 `F70216AD3AB09D39F6B3F719D6DAE92799745BA3`, created with

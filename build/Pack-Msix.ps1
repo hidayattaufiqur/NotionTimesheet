@@ -112,13 +112,22 @@ Write-Host "MSIX: $msix (version $Version)" -ForegroundColor Green
 if ($Install) {
     $installed = Get-AppxPackage -Name 'NotionTimesheet' -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($installed -and [version]$Version -le [version]$installed.Version) {
-        Write-Host "    installed version is $($installed.Version); installing $Version with -ForceUpdateFromAnyVersion (bump -Version next time)." -ForegroundColor DarkYellow
+        Write-Host "    installed version is $($installed.Version); installing $Version with a clean reinstall (bump -Version next time)." -ForegroundColor DarkYellow
     }
 
+    # A plain Add-AppxPackage over an existing version leaves the old version in Command
+    # Palette's extension catalog, so every reload stacks another copy of the commands
+    # (two "Start task" rows, then three...). Uninstall first, then install.
+    Write-Host '==> Removing any previous NotionTimesheet package' -ForegroundColor Cyan
+    Get-Process NotionTimesheet -ErrorAction SilentlyContinue | Stop-Process -Force
+    Get-AppxPackage -Name 'NotionTimesheet' -ErrorAction SilentlyContinue | Remove-AppxPackage
+    Start-Sleep -Milliseconds 500
+
     Write-Host '==> Registering package for the current user' -ForegroundColor Cyan
-    Add-AppxPackage -Path $msix -ForceUpdateFromAnyVersion -ForceApplicationShutdown
+    Add-AppxPackage -Path $msix
     Get-AppxPackage -Name 'NotionTimesheet' | Format-List Name, Version, InstallLocation, PackageFullName
-    Write-Host 'Now run "Reload Command Palette extensions" in Command Palette.' -ForegroundColor Yellow
+    Write-Host 'Restart Command Palette (close it from its menu, then Alt+Space) once, so it drops the old package full name.' -ForegroundColor Yellow
+    Write-Host 'After that, "Reload Command Palette extensions" is enough for code-only rebuilds of the same version.' -ForegroundColor Yellow
 }
 
 
