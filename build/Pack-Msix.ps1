@@ -26,6 +26,11 @@ param(
 
     [string]$CertificateThumbprint = 'F70216AD3AB09D39F6B3F719D6DAE92799745BA3',
 
+    # Stamps the Identity/@Version of the packaged manifest only (Package.appxmanifest in git
+    # stays at whatever baseline it has). Use a higher value than what is installed.
+    [ValidatePattern('^\d+\.\d+\.\d+\.\d+$')]
+    [string]$Version,
+
     [switch]$Install
 )
 
@@ -55,7 +60,25 @@ if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed.' }
 
 Write-Host '==> Building MSIX layout' -ForegroundColor Cyan
 Copy-Item (Join-Path $publish '*') $layout -Recurse -Force
-Copy-Item (Join-Path $root 'NotionTimesheet\Package.appxmanifest') (Join-Path $layout 'AppxManifest.xml') -Force
+$manifestPath = Join-Path $layout 'AppxManifest.xml'
+Copy-Item (Join-Path $root 'NotionTimesheet\Package.appxmanifest') $manifestPath -Force
+
+$tokenVersion = [regex]::Match((Get-Content $manifestPath -Raw), '<Identity[^>]*\bVersion="([0-9.]+)"').Groups[1].Value
+if ($Version) {
+    # Only the Identity element carries the package version; leave every other attribute alone.
+    $manifest = Get-Content $manifestPath -Raw
+    $stamped = [regex]::Replace(
+        $manifest,
+        '(<Identity\b[^>]*\bVersion=")[0-9.]+(")',
+        { param($m) $m.Groups[1].Value + $Version + $m.Groups[2].Value })
+    if ($stamped -eq $manifest) { throw 'Could not stamp Version into AppxManifest.xml.' }
+    Set-Content -Path $manifestPath -Value $stamped -Encoding UTF8 -NoNewline
+    Write-Host "    package version stamped: $tokenVersion -> $Version" -ForegroundColor DarkGray
+}
+else {
+    Write-Host "    package version from manifest: $tokenVersion (pass -Version x.y.z.0 to bump)" -ForegroundColor DarkGray
+    $Version = $tokenVersion
+}
 
 $globalPackages = ((dotnet nuget locals global-packages --list) -join '') -replace '^global-packages:\s*', ''
 $globalPackages = $globalPackages.Trim()
@@ -84,11 +107,16 @@ Write-Host "==> Signing with $($cert.Subject)" -ForegroundColor Cyan
 & $signtool sign /fd SHA256 /td SHA256 /sha1 $CertificateThumbprint $msix
 if ($LASTEXITCODE -ne 0) { throw 'signtool failed.' }
 
-Write-Host "MSIX: $msix" -ForegroundColor Green
+Write-Host "MSIX: $msix (version $Version)" -ForegroundColor Green
 
 if ($Install) {
+    $installed = Get-AppxPackage -Name 'NotionTimesheet' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($installed -and [version]$Version -le [version]$installed.Version) {
+        Write-Host "    installed version is $($installed.Version); installing $Version with -ForceUpdateFromAnyVersion (bump -Version next time)." -ForegroundColor DarkYellow
+    }
+
     Write-Host '==> Registering package for the current user' -ForegroundColor Cyan
-    Add-AppxPackage -Path $msix -ForceUpdateFromAnyVersion
+    Add-AppxPackage -Path $msix -ForceUpdateFromAnyVersion -ForceApplicationShutdown
     Get-AppxPackage -Name 'NotionTimesheet' | Format-List Name, Version, InstallLocation, PackageFullName
     Write-Host 'Now run "Reload Command Palette extensions" in Command Palette.' -ForegroundColor Yellow
 }

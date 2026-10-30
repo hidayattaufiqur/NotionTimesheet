@@ -53,10 +53,17 @@ MSIX build targets (`/t:Deploy`, `GenerateAppxPackageOnBuild`) cannot run: they 
 
 ```powershell
 pwsh -File .\build\Pack-Msix.ps1 -Install
+pwsh -File .\build\Pack-Msix.ps1 -Version 1.0.2.0 -Install   # bump for the next redeploy
 ```
 
 It publishes self-contained, builds the MSIX layout from `Package.appxmanifest`, packs, signs
 with the code-signing cert and registers the package for the current user.
+
+`-Version` stamps `Identity/@Version` **in the packaged `AppxManifest.xml` only** — the
+`Package.appxmanifest` in git stays at its baseline, so every install is a clean upgrade instead
+of relying on `-ForceUpdateFromAnyVersion`. Without `-Version` the manifest value is used and the
+script warns when it is not newer than what is installed. Installation always uses
+`-ForceApplicationShutdown` because Command Palette keeps the extension process alive.
 
 Signing identity: `CN=Nine Dots Consulting`, thumbprint
 `F70216AD3AB09D39F6B3F719D6DAE92799745BA3`, created with
