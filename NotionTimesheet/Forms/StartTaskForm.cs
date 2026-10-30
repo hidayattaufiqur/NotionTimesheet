@@ -16,17 +16,22 @@ internal sealed partial class StartTaskForm : FormContent
     private readonly NotionClient client;
     private readonly string defaultStatus;
     private readonly IReadOnlyList<ProjectChoice> projects;
+    private readonly ProjectChoice? project;
+    private readonly bool createNewProject;
 
     public StartTaskForm(
         NotionClient client,
         string defaultStatus,
         IReadOnlyList<ProjectChoice> projects,
-        string? projectLoadWarning)
+        ProjectChoice? project,
+        bool createNewProject)
     {
         this.client = client;
         this.defaultStatus = defaultStatus;
         this.projects = projects;
-        TemplateJson = BuildCard(projects, projectLoadWarning);
+        this.project = project;
+        this.createNewProject = createNewProject;
+        TemplateJson = BuildCard();
     }
 
     public override CommandResult SubmitForm(string payload)
@@ -67,17 +72,22 @@ internal sealed partial class StartTaskForm : FormContent
         var priority = Pick(ReadString(inputs, "priority"), NotionIds.Priorities, NotionIds.DefaultPriority);
         var category = Pick(ReadString(inputs, "category"), NotionIds.Categories, NotionIds.DefaultCategory);
         var status = Pick(ReadString(inputs, "status"), NotionIds.Statuses, defaultStatus);
-        var project = ReadString(inputs, "project");
-        var projectId = string.IsNullOrWhiteSpace(project) || project == "none" ? null : project;
-        var newProjectTitle = ReadString(inputs, "projectNew")?.Trim();
 
         var start = Clock.Now();
 
-        // A typed project name wins over the dropdown: reuse an existing page with that exact
-        // title, otherwise create it, then link it. Nothing is created if this step fails.
+        // Project was chosen on the picker page; in "create new" mode the typed name decides.
+        // Nothing is created if this step fails.
+        string? projectId = project?.Id;
         string? projectNote = null;
-        if (!string.IsNullOrWhiteSpace(newProjectTitle))
+
+        if (createNewProject)
         {
+            var newProjectTitle = ReadString(inputs, "projectNew")?.Trim();
+            if (string.IsNullOrWhiteSpace(newProjectTitle))
+            {
+                return Fail("A name for the new FDD/Project is required — nothing was created.");
+            }
+
             var exact = projects.FirstOrDefault(p =>
                 string.Equals(p.Title.Trim(), newProjectTitle, StringComparison.OrdinalIgnoreCase));
 
@@ -101,7 +111,7 @@ internal sealed partial class StartTaskForm : FormContent
                 {
                     var sample = string.Join(", ", partial.Take(3).Select(p => $"\"{p.Title}\""));
                     ExtensionHost.LogMessage($"NotionTimesheet: project \"{newProjectTitle}\" matched {partial.Count} projects; refusing.");
-                    return Fail($"Nothing was created. \"{newProjectTitle}\" matches {partial.Count} projects: {sample}. Pick one in the list or type more of the name.");
+                    return Fail($"Nothing was created. \"{newProjectTitle}\" matches {partial.Count} projects: {sample}. Type more of the name, or go back and pick one from the list.");
                 }
                 else
                 {
@@ -196,7 +206,7 @@ internal sealed partial class StartTaskForm : FormContent
         }
     }
 
-    private string BuildCard(IReadOnlyList<ProjectChoice> projects, string? projectLoadWarning)
+    private string BuildCard()
     {
         var now = Clock.Now();
 
@@ -204,6 +214,12 @@ internal sealed partial class StartTaskForm : FormContent
         {
             TextBlock("Start a Tasks Kanban timer", size: "medium", weight: "bolder", style: "heading"),
             TextBlock($"Start Time is stamped when you submit · now {Clock.Time(now)} WIB · Timeline Date {Clock.Day(now)}"),
+            TextBlock(createNewProject
+                ? "New FDD/Project will be created (or an existing one reused if the name matches)."
+                : project is null
+                    ? "Project: none"
+                    : $"Project: {project.Title}",
+                isSubtle: true),
             new JsonObject
             {
                 ["type"] = "Input.Text",
@@ -225,33 +241,28 @@ internal sealed partial class StartTaskForm : FormContent
             },
             ChoiceSet("priority", "Priority", NotionIds.Priorities.Select(option => (option, option)), NotionIds.DefaultPriority),
             ChoiceSet("category", "Category", NotionIds.Categories.Select(option => (option, option)), NotionIds.DefaultCategory),
-            ChoiceSet(
-                "project",
-                "FDD/Project (optional)",
-                ProjectOptions(projects),
-                "none"),
-            TextBlock(
-                "Type part of a project name below: a unique match is linked, several matches ask you to be more specific, no match creates it in the FDD/Projects database.",
-                isSubtle: true),
-            new JsonObject
+        };
+
+        if (createNewProject)
+        {
+            body.Add(new JsonObject
             {
                 ["type"] = "Input.Text",
                 ["id"] = "projectNew",
-                ["label"] = "FDD/Project name (search or create)",
-                ["placeholder"] = "e.g. 13396, OSMT, NeoMax…",
+                ["label"] = "New FDD/Project name",
+                ["placeholder"] = "e.g. OSMT - 13396 follow-up",
+                ["isRequired"] = true,
+                ["errorMessage"] = "A project name is required.",
                 ["style"] = "text",
-            },
-            ChoiceSet(
-                "status",
-                "Status",
-                NotionIds.Statuses.Select(option => (option, option)),
-                string.IsNullOrWhiteSpace(defaultStatus) ? NotionIds.DefaultStatus : defaultStatus),
-        };
-
-        if (!string.IsNullOrWhiteSpace(projectLoadWarning))
-        {
-            body.Add(TextBlock(projectLoadWarning, isSubtle: true, color: "attention"));
+            });
         }
+
+        body.Add(ChoiceSet(
+            "status",
+            "Status",
+            NotionIds.Statuses.Select(option => (option, option)),
+            string.IsNullOrWhiteSpace(defaultStatus) ? NotionIds.DefaultStatus : defaultStatus));
+
 
         var card = new JsonObject
         {
@@ -267,16 +278,6 @@ internal sealed partial class StartTaskForm : FormContent
         };
 
         return card.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
-    }
-
-    private static IEnumerable<(string Title, string Value)> ProjectOptions(IReadOnlyList<ProjectChoice> projects)
-    {
-        yield return ("No project", "none");
-
-        foreach (var project in projects)
-        {
-            yield return (NotionErrors.Truncate(project.Title, 90), project.Id);
-        }
     }
 
     private static JsonObject TextBlock(

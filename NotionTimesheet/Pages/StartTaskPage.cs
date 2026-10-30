@@ -1,4 +1,3 @@
-using NotionTimesheet.Forms;
 using NotionTimesheet.Models;
 using NotionTimesheet.Services;
 using Microsoft.CommandPalette.Extensions;
@@ -6,8 +5,13 @@ using Microsoft.CommandPalette.Extensions.Toolkit;
 
 namespace NotionTimesheet.Pages;
 
-/// <summary>Top-level "Start task…" command: a form page backed by Notion.</summary>
-internal sealed partial class StartTaskPage : ContentPage
+/// <summary>
+/// Top-level "Start task" command. It is a searchable project picker first: Command Palette's
+/// own search box filters this list as you type (e.g. "13396" narrows to that one project),
+/// which an Adaptive Card choice set cannot do. Picking a row opens the task form with the
+/// project already linked.
+/// </summary>
+internal sealed partial class StartTaskPage : ListPage
 {
     private readonly NotionSettingsManager settings;
 
@@ -17,14 +21,23 @@ internal sealed partial class StartTaskPage : ContentPage
         Name = "Open";
         Title = "Start task";
         Icon = new IconInfo("\uE768"); // Play
+        PlaceholderText = "Search FDD/Projects — typing filters this list";
     }
 
-    public override IContent[] GetContent()
+    public override IListItem[] GetItems()
     {
         var resolution = TokenStore.Resolve();
         if (!resolution.HasToken)
         {
-            return [new MarkdownContent(BuildMissingTokenNote(resolution))];
+            return
+            [
+                new ListItem(new SetupPage(resolution.Problem))
+                {
+                    Title = "Notion token not configured",
+                    Subtitle = $"Open this for the exact path ({TokenStore.TokenFile})",
+                    Icon = new IconInfo("\uE72E"),
+                },
+            ];
         }
 
         var client = new NotionClient(resolution.Token!);
@@ -37,30 +50,46 @@ internal sealed partial class StartTaskPage : ContentPage
         }
         catch (Exception ex)
         {
-            warning = $"Project list unavailable ({NotionErrors.Describe(ex)}) — you can still start the task with No project.";
+            warning = $"Project list unavailable ({NotionErrors.Describe(ex)}) — you can still start without a project.";
         }
 
-        return [new StartTaskForm(client, settings.DefaultStatus, projects, warning)];
+        var items = new List<IListItem>
+        {
+            new ListItem(new StartTaskFormPage(settings, client, projects, null, createNewProject: false))
+            {
+                Title = "No project",
+                Subtitle = "Start the task without an FDD/Project link",
+                Icon = new IconInfo("\uE768"),
+            },
+            new ListItem(new StartTaskFormPage(settings, client, projects, null, createNewProject: true))
+            {
+                Title = "Create new project…",
+                Subtitle = "Adds a page to FDD/Projects, then links it to the task",
+                Icon = new IconInfo("\uE710"), // Add
+            },
+        };
+
+        if (warning is not null)
+        {
+            items.Add(new ListItem(new NoOpCommand())
+            {
+                Title = "Project list unavailable",
+                Subtitle = NotionErrors.Truncate(warning, 300),
+                Icon = new IconInfo("\uE7BA"),
+            });
+        }
+
+        foreach (var project in projects)
+        {
+            items.Add(new ListItem(new StartTaskFormPage(settings, client, projects, project, createNewProject: false))
+            {
+                Title = project.Title,
+                Subtitle = "Link this FDD/Project",
+                Icon = new IconInfo("\uE8B7"), // Folder
+            });
+        }
+
+        return [.. items];
     }
-
-    private static string BuildMissingTokenNote(TokenResolution resolution) =>
-        $"""
-# Notion token not configured
-
-{resolution.Problem ?? "No Notion token found."}
-
-## Fix
-
-1. Create the folder `{TokenStore.Folder}` if needed.
-2. Add `token.txt` in it with your Notion integration token on a single line (it starts with `ntn_` or `secret_`).
-
-Exact path:
-
-```
-{TokenStore.TokenFile}
-```
-
-The `NOTION_API_KEY` environment variable also works and takes precedence. After changing the token, run **Reload Command Palette extensions**.
-""";
 }
 

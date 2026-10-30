@@ -4,19 +4,19 @@ Start and finish Notion **Tasks Kanban** timers without opening Notion.
 
 | Command | What it does |
 |---|---|
-| **Start task** | Adaptive Card form (title, description, priority, category, FDD/Project, status). On submit it creates a Tasks Kanban row with `Start Time` = submit moment (`+07:00`), `Timeline Date` = today, `Month` resolved from that same timestamp (`October 2026`), plus the picked fields. Status defaults to **Do Today**. The project picker lists every FDD/Project page (type to filter); typing a name that is not in the list creates the project page and links it. |
+| **Start task** | Opens a **searchable project list** first (Command Palette's native search filters it as you type, so `13396` narrows to that one project). Items: `No project`, `Create new project…`, then every FDD/Project page. Picking one opens the Adaptive Card (title, description, priority, category, status) pre-bound to that project. On submit it creates a Tasks Kanban row with `Start Time` = submit moment (`+07:00`), `Timeline Date` = today, `Month` resolved from that same timestamp (`October 2026`), plus the picked fields. Status defaults to **Do Today**. `Create new project…` adds a page to FDD/Projects (reusing an existing one on an exact/unique name match) and links it. |
 | **Finish task** | Live list of `In-Progress` and `Do Today` rows (with an explicit **Refresh list** item). Invoking a row PATCHes `End Time` = now, `Status` = `Completed`, and backfills `Start Time` if it was empty. |
 
 Notes on the Start task card:
 
 - **Status** preselects `Do Today` (changeable in *Settings*, per extension).
 - **Month** is resolved from the exact timestamp written to `Start Time` — a task started at 00:30 on the 1st links the new month. The resolved id is cached per calendar month; an ambiguous or missing month leaves the relation empty and says so in the confirmation toast.
-- **FDD/Project** loads every non-trashed project page (paginated) into a normal dropdown, plus a
-  **FDD/Project name (search or create)** field: an exact title is reused, a unique substring match
-  is linked (`linked existing project "CR 13396 …"`), several matches ask you to be more specific,
-  and no match creates the page in the FDD/Projects data source. If that create fails, no task row
-  is created. Type-to-search *inside* the dropdown was tried (`Input.ChoiceSet`
-  `style: filtered`) and Command Palette drops the keystrokes, so search lives in the text field.
+- **FDD/Project** is chosen *before* the form, on a normal list page, because that is the only
+  place where typing filters live: type `13396`, the list narrows to
+  `CR 13396 - NOR - EHF - Equinor Feedback`, press Enter, and the form opens bound to it.
+  `No project` and `Create new project…` are the first two rows. (Painting type-to-search
+  *inside* an Adaptive Card choice set was tried twice — `style: filtered` swallows the
+  keystrokes and a free-text box only resolves after submit, no live list.)
 
 ---
 

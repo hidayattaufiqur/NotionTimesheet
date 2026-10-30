@@ -14,18 +14,20 @@ Before you start: `%LOCALAPPDATA%\CmdPalNotion\token.txt` must exist with the in
 
 ## Test 1 — Start task creates a correct row
 
-1. `Alt+Space` → type `start task` → `Enter`.
-2. The form should show six fields:
-   **Task title\*** (text), **Description (optional)** (multi-line), **Priority**,
-   **Category**, **FDD/Project (optional)**, **Status**.
-3. Fill:
+1. `Alt+Space` → `start task` → `Enter`.
+2. You get the **project list** first: `No project`, `Create new project…`, then all FDD/Project
+   pages. Type `13396` in the search box → the list narrows to
+   `CR 13396 - NOR - EHF - Equinor Feedback`. Press `Enter`.
+3. The form opens with `Project: CR 13396 - NOR - EHF - Equinor Feedback` at the top and
+   five fields: **Task title\***, **Description (optional)**, **Priority**, **Category**,
+   **Status** (default `Do Today`).
+4. Fill:
    * Task title: `ACCEPTANCE TEST — delete me`
    * Description: `manual acceptance run`
    * Priority: `Crucial`
    * Category: `Comlab`
-   * FDD/Project: type a few letters to filter, pick any project (or `No project`)
-   * Status: leave the default — it must now be **Do Today**
-4. Click the **Start task** action at the bottom of the card.
+   * Status: leave the default — it must be **Do Today**
+5. Click the **Start task** action at the bottom of the card.
 
 **Expected:** a toast like
 `Started "ACCEPTANCE TEST — delete me" at 15:42 WIB https://app.notion.com/p/...`
@@ -35,18 +37,15 @@ and the palette returns to the search page.
 today, Priority `Crucial`, Category `Comlab`, Status `Do Today`, Month linked to the
 `October 2026` row.
 
-## Test 1b — project search and create-new
+## Test 1b — create-new project
 
-1. `start task` again.
-2. **FDD/Project** dropdown now lists all 112 project pages (scrollable, no typeahead — the
-   palette ignores Adaptive Cards' filtered style).
-3. In **FDD/Project name (search or create)** type `13396`.
-4. Submit.
+1. `start task` → pick **Create new project…** (second row).
+2. In **New FDD/Project name**, type `ZZ MANUAL TEST PROJECT — delete me`.
+3. Fill the title and submit.
 
-**Expected:** toast says `linked existing project "CR 13396 - NOR - EHF - Equinor Feedback"`, and
-the task row's `FDD/Project` points at that existing page (no duplicate created).
-Also try a name that matches nothing, e.g. `ZZ MANUAL TEST PROJECT — delete me` → toast says
-`created project …` and a new page appears in FDD/Projects.
+**Expected:** toast says `created project "…"`, a new page appears in FDD/Projects, and the task
+row's `FDD/Project` points at it. Repeating with the same name links the existing page
+(`linked existing project …`).
 
 ## Test 2 — Empty title is blocked
 1. `Alt+Space` → `start task` → `Enter`.
