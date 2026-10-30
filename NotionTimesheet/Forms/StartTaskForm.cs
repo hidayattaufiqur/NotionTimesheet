@@ -31,6 +31,20 @@ internal sealed partial class StartTaskForm : FormContent
 
     public override CommandResult SubmitForm(string payload)
     {
+        try
+        {
+            ExtensionHost.LogMessage($"NotionTimesheet: SubmitForm received {NotionErrors.Truncate(payload, 600)}");
+            return SubmitFormCore(payload);
+        }
+        catch (Exception ex)
+        {
+            ExtensionHost.LogMessage($"NotionTimesheet: SubmitForm crashed: {ex}");
+            return Fail($"Nothing was created. Unexpected error: {NotionErrors.Describe(ex)}");
+        }
+    }
+
+    private CommandResult SubmitFormCore(string payload)
+    {
         JsonObject? inputs;
         try
         {
@@ -45,6 +59,7 @@ internal sealed partial class StartTaskForm : FormContent
         if (string.IsNullOrWhiteSpace(title))
         {
             // Belt and braces: the card marks the field required, this stops an empty POST too.
+            ExtensionHost.LogMessage("NotionTimesheet: SubmitForm blocked, empty title.");
             return Fail("Task title is required — nothing was created in Notion.");
         }
 
@@ -85,6 +100,7 @@ internal sealed partial class StartTaskForm : FormContent
                 else if (partial.Count > 1)
                 {
                     var sample = string.Join(", ", partial.Take(3).Select(p => $"\"{p.Title}\""));
+                    ExtensionHost.LogMessage($"NotionTimesheet: project \"{newProjectTitle}\" matched {partial.Count} projects; refusing.");
                     return Fail($"Nothing was created. \"{newProjectTitle}\" matches {partial.Count} projects: {sample}. Pick one in the list or type more of the name.");
                 }
                 else
@@ -143,6 +159,7 @@ internal sealed partial class StartTaskForm : FormContent
             }
 
             message = NotionErrors.Truncate(message, 500);
+            ExtensionHost.LogMessage($"NotionTimesheet: created task {created.PageId} \"{title}\" project={projectId ?? "none"} month={monthId ?? "none"}");
             ShowStatus(message, MessageState.Success);
             return CommandResult.ShowToast(new ToastArgs
             {
