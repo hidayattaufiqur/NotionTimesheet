@@ -10,7 +10,11 @@ Start and finish Notion **Tasks Kanban** timers without opening Notion.
 Notes on the Start task card:
 
 - **Status** preselects `Do Today` (changeable in *Settings*, per extension).
-- **Month** is resolved from the exact timestamp written to `Start Time` — a task started at 00:30 on the 1st links the new month. The resolved id is cached per calendar month; an ambiguous or missing month leaves the relation empty and says so in the confirmation toast.
+- **Month** links the **most recently created** row in the Month database that is not in the
+  future — i.e. the month you are actually working in. If this month's row has not been created
+  yet, it falls back to the previous one instead of leaving the relation empty; a December row
+  created early is ignored until December. Resolved id is cached for 5 minutes, so a freshly
+  created month row is picked up on the next start.
 - **Recent projects** are pinned at the top of the picker (`Section: Recent`, newest first, max 3,
   persisted in `%LOCALAPPDATA%\CmdPalNotion\recent-projects.json`) and removed from the full list
   below to avoid duplicates.

@@ -32,6 +32,9 @@ internal sealed class NotionClient
     private static readonly object MonthCacheLock = new();
     private static string? monthCacheId;
     private static string? monthCacheKey;
+    private static DateTimeOffset monthCacheFetchedAt;
+
+    private static readonly TimeSpan MonthCacheLifetime = TimeSpan.FromMinutes(5);
     private static readonly object ProjectCacheLock = new();
     private static IReadOnlyList<ProjectChoice>? projectCache;
     private static DateTimeOffset projectCacheFetchedAt;
@@ -272,75 +275,36 @@ internal sealed class NotionClient
     }
 
     /// <summary>
-    /// Resolves the "October 2026" Month row for the timestamp written into Start Time.
-    /// Cached per calendar month (the extension process is a single long-lived COM server).
+    /// Links the most recently created Month row that is not in the future, which is how the
+    /// Month database is maintained ("November 2026" is created when the month starts). This
+    /// keeps working when the current month's row has not been created yet: the previous month
+    /// is linked instead of leaving the relation empty. Cached for five minutes.
     /// </summary>
     public async Task<(string? MonthId, string? Warning)> ResolveMonthAsync(
         DateTimeOffset start,
         CancellationToken cancellationToken = default)
     {
         var monthName = Clock.MonthName(start);
-        var cacheKey = start.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
+        var monthStart = new DateTime(start.Year, start.Month, 1);
+        var cacheKey = monthStart.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
 
         lock (MonthCacheLock)
         {
-            if (monthCacheKey == cacheKey)
+            if (monthCacheKey == cacheKey &&
+                DateTimeOffset.UtcNow - monthCacheFetchedAt < MonthCacheLifetime)
             {
                 return (monthCacheId, null);
             }
         }
 
-        var titleProperty = await FindTitlePropertyAsync(NotionIds.MonthDataSourceId, cancellationToken).ConfigureAwait(false);
-
-        var exact = await QueryMonthRowsAsync(titleProperty, monthName, "equals", cancellationToken).ConfigureAwait(false);
-        var matches = FilterByExactTitle(exact, monthName);
-
-        if (matches.Count == 0)
-        {
-            // Row titled with a suffix/prefix (e.g. "October 2026 (WIP)") still counts if only one matches.
-            var broader = await QueryMonthRowsAsync(titleProperty, monthName, "contains", cancellationToken).ConfigureAwait(false);
-            matches = FilterByExactTitle(broader, monthName);
-        }
-
-        string? id = null;
-        string? warning = null;
-
-        if (matches.Count == 1)
-        {
-            id = matches[0]["id"]?.GetValue<string>();
-        }
-        else if (matches.Count == 0)
-        {
-            warning = $"No \"{monthName}\" row in the Month database — the task was created without a Month link.";
-        }
-        else
-        {
-            warning = $"{matches.Count} Month rows match \"{monthName}\" — Month left unlinked to avoid guessing.";
-        }
-
-        lock (MonthCacheLock)
-        {
-            monthCacheId = id;
-            monthCacheKey = id is null ? null : cacheKey;
-        }
-
-        return (id, warning);
-    }
-
-    private async Task<JsonArray> QueryMonthRowsAsync(
-        string titleProperty,
-        string monthName,
-        string match,
-        CancellationToken cancellationToken)
-    {
         var payload = new JsonObject
         {
-            ["filter"] = new JsonObject
+            ["sorts"] = new JsonArray(new JsonObject
             {
-                ["property"] = titleProperty,
-                ["title"] = new JsonObject { [match] = monthName },
-            },
-            ["page_size"] = 20,
+                ["timestamp"] = "created_time",
+                ["direction"] = "descending",
+            }),
+            ["page_size"] = 25,
         };
 
         var response = await SendAsync(
@@ -349,15 +313,57 @@ internal sealed class NotionClient
             payload,
             cancellationToken).ConfigureAwait(false);
 
-        return response["results"] as JsonArray ?? new JsonArray();
-    }
+        string? id = null;
+        string? linkedName = null;
 
-    private static List<JsonObject> FilterByExactTitle(JsonArray rows, string monthName) =>
-        rows
-            .OfType<JsonObject>()
-            .Where(row => row["in_trash"]?.GetValue<bool>() != true)
-            .Where(row => string.Equals(PageTitle(row)?.Trim(), monthName, StringComparison.OrdinalIgnoreCase))
-            .ToList();
+        if (response["results"] is JsonArray rows)
+        {
+            foreach (var row in rows.OfType<JsonObject>())
+            {
+                if (row["in_trash"]?.GetValue<bool>() == true)
+                {
+                    continue;
+                }
+
+                var name = PageTitle(row)?.Trim();
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    continue;
+                }
+
+                // Skip months that have not started yet (e.g. a December row created in November).
+                if (DateTime.TryParseExact(
+                        name,
+                        "MMMM yyyy",
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.None,
+                        out var parsedMonth) &&
+                    parsedMonth > monthStart)
+                {
+                    continue;
+                }
+
+                id = row["id"]?.GetValue<string>();
+                linkedName = name;
+                break;
+            }
+        }
+
+        string? warning = null;
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            warning = $"No Month row found in the Month database (newest one created up to {monthName}) — the task was created without a Month link.";
+        }
+
+        lock (MonthCacheLock)
+        {
+            monthCacheId = id;
+            monthCacheKey = id is null ? null : cacheKey;
+            monthCacheFetchedAt = DateTimeOffset.UtcNow;
+        }
+
+        return (id, warning);
+    }
 
     private async Task<string> FindTitlePropertyAsync(string dataSourceId, CancellationToken cancellationToken)
     {

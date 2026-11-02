@@ -34,8 +34,8 @@ Before you start: `%LOCALAPPDATA%\CmdPalNotion\token.txt` must exist with the in
 and the palette returns to the search page.
 
 **Row must have:** Start Time = the submit minute with a `+07:00` offset, Timeline Date =
-today, Priority `Crucial`, Category `Comlab`, Status `Do Today`, Month linked to the
-`October 2026` row.
+today, Priority `Crucial`, Category `Comlab`, Status `Do Today`, Month linked to the newest
+Month row that is not in the future (today: `November 2026`).
 
 ## Test 1b — create-new project
 
