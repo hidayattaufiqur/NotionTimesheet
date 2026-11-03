@@ -15,6 +15,10 @@ Notes on the Start task card:
   yet, it falls back to the previous one instead of leaving the relation empty; a December row
   created early is ignored until December. Resolved id is cached for 5 minutes, so a freshly
   created month row is picked up on the next start.
+- **Title pre-fills from the picked project**: pick `CR 13396 - NOR - EHF - Equinor Feedback` and the
+  task title already says that — just add detail if you want. `No project` starts empty; in
+  `Create new project…` mode the title falls back to the new project name when left blank. A
+  restored draft still wins, so a retry keeps what you typed.
 - **Recent projects** are pinned at the top of the picker (`Section: Recent`, newest first, max 3,
   persisted in `%LOCALAPPDATA%\CmdPalNotion\recent-projects.json`) and removed from the full list
   below to avoid duplicates.

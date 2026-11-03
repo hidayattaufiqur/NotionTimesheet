@@ -18,15 +18,10 @@ Before you start: `%LOCALAPPDATA%\CmdPalNotion\token.txt` must exist with the in
 2. You get the **project list** first: `No project`, `Create new project…`, then all FDD/Project
    pages. Type `13396` in the search box → the list narrows to
    `CR 13396 - NOR - EHF - Equinor Feedback`. Press `Enter`.
-3. The form opens with `Project: CR 13396 - NOR - EHF - Equinor Feedback` at the top and
-   five fields: **Task title\***, **Description (optional)**, **Priority**, **Category**,
-   **Status** (default `Do Today`).
-4. Fill:
-   * Task title: `ACCEPTANCE TEST — delete me`
-   * Description: `manual acceptance run`
-   * Priority: `Crucial`
-   * Category: `Comlab`
-   * Status: leave the default — it must be **Do Today**
+3. The form opens with `Project: CR 13396 - NOR - EHF - Equinor Feedback` at the top, the
+   **Task title already filled with that project title**, and the other fields:
+   **Description (optional)**, **Priority**, **Category**, **Status** (default `Do Today`).
+4. Adjust the title if you want a more specific one (otherwise leave it).
 5. Click the **Start task** action at the bottom of the card.
 
 **Expected:** a toast like

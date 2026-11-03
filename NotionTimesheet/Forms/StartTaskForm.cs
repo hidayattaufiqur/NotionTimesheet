@@ -60,10 +60,20 @@ internal sealed partial class StartTaskForm : FormContent
             inputs = null;
         }
 
+        var newProjectTitle = createNewProject ? ReadString(inputs, "projectNew")?.Trim() : null;
+
         var title = ReadString(inputs, "title")?.Trim();
+
+        // Title defaults to the picked FDD/Project title; in "create new" mode it falls back
+        // to the project name that is being created.
         if (string.IsNullOrWhiteSpace(title))
         {
-            // Belt and braces: the card marks the field required, this stops an empty POST too.
+            title = !string.IsNullOrWhiteSpace(newProjectTitle) ? newProjectTitle : project?.Title?.Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            // Belt and braces: the card pre-fills the title from the project, this stops an empty POST too.
             ExtensionHost.LogMessage("NotionTimesheet: SubmitForm blocked, empty title.");
             return Fail("Task title is required — nothing was created in Notion.");
         }
@@ -83,7 +93,6 @@ internal sealed partial class StartTaskForm : FormContent
 
         if (createNewProject)
         {
-            var newProjectTitle = ReadString(inputs, "projectNew")?.Trim();
             if (string.IsNullOrWhiteSpace(newProjectTitle))
             {
                 return Fail("A name for the new FDD/Project is required — nothing was created.");
@@ -231,7 +240,7 @@ internal sealed partial class StartTaskForm : FormContent
         var now = Clock.Now();
         var draft = DraftStore.TryGet();
 
-        var titleValue = draft?.Title ?? string.Empty;
+        var titleValue = draft?.Title ?? project?.Title ?? string.Empty;
         var descriptionValue = draft?.Description ?? string.Empty;
         var priorityDefault = Pick(draft?.Priority, NotionIds.Priorities, NotionIds.DefaultPriority);
         var categoryDefault = Pick(draft?.Category, NotionIds.Categories, NotionIds.DefaultCategory);
@@ -255,7 +264,7 @@ internal sealed partial class StartTaskForm : FormContent
                 ["label"] = "Task title",
                 ["placeholder"] = "What are you working on?",
                 ["value"] = titleValue,
-                ["isRequired"] = true,
+                ["isRequired"] = !createNewProject,
                 ["errorMessage"] = "A task title is required.",
                 ["style"] = "text",
             },
@@ -285,6 +294,9 @@ internal sealed partial class StartTaskForm : FormContent
                 ["errorMessage"] = "A project name is required.",
                 ["style"] = "text",
             });
+            body.Add(TextBlock(
+                "The task title defaults to this project name if you leave it empty.",
+                isSubtle: true));
         }
 
         body.Add(ChoiceSet("status", "Status", NotionIds.Statuses.Select(option => (option, option)), statusDefault));
