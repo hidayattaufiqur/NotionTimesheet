@@ -64,8 +64,8 @@ row's `FDD/Project` points at it. Repeating with the same name links the existin
 
 1. `Alt+Space` → type `finish task` → `Enter`.
 2. The list shows **Refresh list** first, then every row whose Status is `In-Progress` or
-   `Do Today`, sorted by Start Time ascending, each with subtitle
-   `Start <ddd HH:mm> WIB · <Category>`.
+   `Do Today` **and that has a Start Time**, sorted by Start Time ascending, each with subtitle
+   `Start <ddd HH:mm> WIB · <Category>`. Rows without a Start Time no longer appear at all.
 3. Select `ACCEPTANCE TEST — delete me` and press `Enter`.
 
 **Expected:** toast `Finished "ACCEPTANCE TEST — delete me" at HH:mm WIB`, the row disappears

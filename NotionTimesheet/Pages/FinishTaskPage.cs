@@ -24,7 +24,7 @@ internal sealed partial class FinishTaskPage : ListPage
         Name = "Open";
         Title = "Finish task";
         Icon = new IconInfo("\uE823"); // Stop
-        PlaceholderText = "No In-Progress or Do Today tasks in Tasks Kanban";
+        PlaceholderText = "No started In-Progress or Do Today tasks in Tasks Kanban";
     }
 
     public override IListItem[] GetItems()
@@ -67,7 +67,7 @@ internal sealed partial class FinishTaskPage : ListPage
             new ListItem(new AnonymousCommand(Refresh) { Name = "Refresh", Result = CommandResult.KeepOpen() })
             {
                 Title = "Refresh list",
-                Subtitle = "Re-query Tasks Kanban for In-Progress and Do Today rows",
+                Subtitle = "Re-query Tasks Kanban for started In-Progress and Do Today rows",
                 Icon = new IconInfo("\uE72C"), // Refresh
             },
         };
@@ -89,7 +89,7 @@ internal sealed partial class FinishTaskPage : ListPage
             items.Add(new ListItem(new NoOpCommand())
             {
                 Title = "Nothing is in progress",
-                Subtitle = "Start a task first, or press Refresh after changing Status in Notion",
+                Subtitle = "Only rows with a Start Time are listed — start a task, or press Refresh after changing Status in Notion",
                 Icon = new IconInfo("\uE946"), // Info
             });
 

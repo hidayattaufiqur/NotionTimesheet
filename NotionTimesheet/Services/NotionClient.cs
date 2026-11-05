@@ -53,11 +53,22 @@ internal sealed class NotionClient
     {
         var payload = new JsonObject
         {
+            // Only rows that were actually started: a row without Start Time has nothing to
+            // finish, and backfilling it from the Finish page would invent a duration.
             ["filter"] = new JsonObject
             {
-                ["or"] = new JsonArray(
-                    StatusFilter("In-Progress"),
-                    StatusFilter("Do Today")),
+                ["and"] = new JsonArray(
+                    new JsonObject
+                    {
+                        ["or"] = new JsonArray(
+                            StatusFilter("In-Progress"),
+                            StatusFilter("Do Today")),
+                    },
+                    new JsonObject
+                    {
+                        ["property"] = "Start Time",
+                        ["date"] = new JsonObject { ["is_not_empty"] = true },
+                    }),
             },
             ["sorts"] = new JsonArray(new JsonObject
             {
@@ -80,10 +91,17 @@ internal sealed class NotionClient
                     continue;
                 }
 
+                var startTime = DateStart(obj["properties"]?["Start Time"]);
+                if (string.IsNullOrWhiteSpace(startTime))
+                {
+                    // Defensive: the query already filters these out.
+                    continue;
+                }
+
                 tasks.Add(new OpenTask(
                     PageId: obj["id"]?.GetValue<string>() ?? string.Empty,
                     Title: PageTitle(obj) ?? "(untitled)",
-                    StartTime: DateStart(obj["properties"]?["Start Time"]),
+                    StartTime: startTime,
                     Category: obj["properties"]?["Category"]?["select"]?["name"]?.GetValue<string>(),
                     Url: obj["url"]?.GetValue<string>()));
             }
