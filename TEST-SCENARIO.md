@@ -60,8 +60,18 @@ row's `FDD/Project` points at it. Repeating with the same name links the existin
 
 **Expected:** the card refuses to submit / shows `A task title is required.` — no row is created.
 
-## Test 3 — Finish task stamps the end time
+## Test 3b — Pause
 
+1. `finish task` → highlight the started row → press `Ctrl+K` (More) → **Pause (finish this run,
+   re-queue as Do Today)**.
+
+**Expected:** toast `Paused "<title>" at HH:mm WIB — finished this run and re-queued it as Do
+Today.` In Notion: the original is `Completed` with an End Time; a new row with the same title,
+description, priority, category, project and month appears with Status `Do Today`, **no Start or
+End Time**, Timeline Date = today. It does not show in the Finish list (no Start Time) until it is
+started again.
+
+## Test 3 — Finish task stamps the end time
 1. `Alt+Space` → type `finish task` → `Enter`.
 2. The list shows **Refresh list** first, then every row whose Status is `In-Progress` or
    `Do Today` **and that has a Start Time**, sorted by Start Time ascending, each with subtitle

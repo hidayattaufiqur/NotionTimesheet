@@ -383,6 +383,93 @@ internal sealed class NotionClient
         return (id, warning);
     }
 
+    /// <summary>
+    /// Pause: stamp the running row as finished, then create a copy of it with Status = Do Today
+    /// and no Start/End Time, so the work is queued again exactly like the Notion Pause button.
+    /// </summary>
+    public async Task<CreatedTask> PauseTaskAsync(
+        string pageId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        var page = await SendAsync(HttpMethod.Get, $"/pages/{pageId}", null, cancellationToken).ConfigureAwait(false);
+        var source = page["properties"] as JsonObject ?? new JsonObject();
+
+        await FinishTaskAsync(pageId, hadStartTime: true, now, cancellationToken).ConfigureAwait(false);
+
+        var copy = new JsonObject
+        {
+            ["Name"] = new JsonObject
+            {
+                ["title"] = new JsonArray(TextObject(PageTitleFromProperties(source) ?? "(untitled)")),
+            },
+            ["Status"] = new JsonObject { ["status"] = new JsonObject { ["name"] = "Do Today" } },
+            ["Timeline Date"] = DateProperty(Clock.Day(now)),
+        };
+
+        var description = PlainText(source["Description"]?["rich_text"]);
+        if (!string.IsNullOrWhiteSpace(description))
+        {
+            copy["Description"] = new JsonObject
+            {
+                ["rich_text"] = new JsonArray(TextObject(description)),
+            };
+        }
+
+        var priority = source["Priority"]?["select"]?["name"]?.GetValue<string>();
+        if (!string.IsNullOrWhiteSpace(priority))
+        {
+            copy["Priority"] = new JsonObject { ["select"] = new JsonObject { ["name"] = priority } };
+        }
+
+        var category = source["Category"]?["select"]?["name"]?.GetValue<string>();
+        if (!string.IsNullOrWhiteSpace(category))
+        {
+            copy["Category"] = new JsonObject { ["select"] = new JsonObject { ["name"] = category } };
+        }
+
+        CopyRelation(source, NotionIds.ProjectRelationProperty, copy);
+        CopyRelation(source, NotionIds.MonthRelationProperty, copy);
+
+        var payload = new JsonObject
+        {
+            ["parent"] = new JsonObject { ["database_id"] = NotionIds.TasksKanbanDatabaseId },
+            ["properties"] = copy,
+        };
+
+        var created = await SendAsync(HttpMethod.Post, "/pages", payload, cancellationToken).ConfigureAwait(false);
+        return new CreatedTask(
+            created["id"]?.GetValue<string>() ?? string.Empty,
+            created["url"]?.GetValue<string>());
+    }
+
+    private static void CopyRelation(JsonObject source, string property, JsonObject target)
+    {
+        if (source[property]?["relation"] is not JsonArray relation)
+        {
+            return;
+        }
+
+        var ids = relation
+            .OfType<JsonObject>()
+            .Select(item => item["id"]?.GetValue<string>())
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToList();
+
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        var copy = new JsonArray();
+        foreach (var id in ids)
+        {
+            copy.Add(new JsonObject { ["id"] = id });
+        }
+
+        target[property] = new JsonObject { ["relation"] = copy };
+    }
+
     private async Task<string> FindTitlePropertyAsync(string dataSourceId, CancellationToken cancellationToken)
     {
         if (titlePropertyCache.TryGetValue(dataSourceId, out var cached))
@@ -511,13 +598,11 @@ internal sealed class NotionClient
         ["text"] = new JsonObject { ["content"] = content },
     };
 
-    private static string? PageTitle(JsonObject page)
-    {
-        if (page["properties"] is not JsonObject properties)
-        {
-            return null;
-        }
+    private static string? PageTitle(JsonObject page) =>
+        page["properties"] is JsonObject properties ? PageTitleFromProperties(properties) : null;
 
+    private static string? PageTitleFromProperties(JsonObject properties)
+    {
         foreach (var property in properties)
         {
             if (property.Value?["type"]?.GetValue<string>() == "title")

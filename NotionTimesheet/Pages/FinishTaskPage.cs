@@ -107,6 +107,11 @@ internal sealed partial class FinishTaskPage : ListPage
                 });
             }
 
+            moreCommands.Add(new CommandContextItem(new PauseTaskCommand(client, task, Refresh))
+            {
+                Title = "Pause (finish this run, re-queue as Do Today)",
+            });
+
             items.Add(new ListItem(new FinishTaskCommand(client, task, Refresh))
             {
                 Title = task.Title,

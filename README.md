@@ -5,7 +5,7 @@ Start and finish Notion **Tasks Kanban** timers without opening Notion.
 | Command | What it does |
 |---|---|
 | **Start task** | Opens a **searchable project list** first (Command Palette's native search filters it as you type, so `13396` narrows to that one project). Items: `No project`, `Create new project…`, then every FDD/Project page. Picking one opens the Adaptive Card (title, description, priority, category, status) pre-bound to that project. On submit it creates a Tasks Kanban row with `Start Time` = submit moment (`+07:00`), `Timeline Date` = today, `Month` resolved from that same timestamp (`October 2026`), plus the picked fields. Status defaults to **Do Today**. `Create new project…` adds a page to FDD/Projects (reusing an existing one on an exact/unique name match) and links it. |
-| **Finish task** | Live list of `In-Progress` and `Do Today` rows **that have a Start Time** (rows without one are filtered out — there is nothing to finish). Explicit **Refresh list** item; invoking a row PATCHes `End Time` = now and `Status` = `Completed`. |
+| **Finish task** | Live list of `In-Progress` and `Do Today` rows **that have a Start Time** (rows without one are filtered out — there is nothing to finish). Explicit **Refresh list** item; invoking a row PATCHes `End Time` = now and `Status` = `Completed`. **More → Pause** finishes the run and re-queues a copy as `Do Today` with no Start/End Time (same title, description, priority, category, project and month), matching the Notion Pause button. |
 
 Notes on the Start task card:
 
