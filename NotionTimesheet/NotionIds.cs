@@ -34,5 +34,8 @@ internal static class NotionIds
     public const string CompletedStatus = "Completed";
     public const string ProjectRelationProperty = "FDD/Project";
     public const string MonthRelationProperty = "Month";
+
+    /// <summary>Page icon applied to every task this extension creates.</summary>
+    public const string TaskIconUrl = "https://www.notion.so/icons/clipping_gray.svg";
 }
 

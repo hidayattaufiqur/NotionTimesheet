@@ -9,6 +9,8 @@ Start and finish Notion **Tasks Kanban** timers without opening Notion.
 
 Notes on the Start task card:
 
+- Every task row this extension creates gets the **clipping icon** (`https://www.notion.so/icons/clipping_gray.svg`, sent as `icon: {type: external}`; Notion normalises it to its built-in `clipping`/`gray` icon). Paused copies get it too.
+
 - **Status** preselects `Do Today` (changeable in *Settings*, per extension).
 - **Month** links the **most recently created** row in the Month database that is not in the
   future — i.e. the month you are actually working in. If this month's row has not been created

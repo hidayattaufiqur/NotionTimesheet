@@ -156,6 +156,7 @@ internal sealed class NotionClient
         var payload = new JsonObject
         {
             ["parent"] = new JsonObject { ["database_id"] = NotionIds.TasksKanbanDatabaseId },
+            ["icon"] = TaskIcon(),
             ["properties"] = properties,
         };
 
@@ -434,6 +435,7 @@ internal sealed class NotionClient
         var payload = new JsonObject
         {
             ["parent"] = new JsonObject { ["database_id"] = NotionIds.TasksKanbanDatabaseId },
+            ["icon"] = TaskIcon(),
             ["properties"] = copy,
         };
 
@@ -590,6 +592,17 @@ internal sealed class NotionClient
     private static JsonObject DateProperty(string stamp) => new()
     {
         ["date"] = new JsonObject { ["start"] = stamp },
+    };
+
+    /// <summary>
+    /// Notion only accepts the external-URL form on create; it normalises to its built-in
+    /// icon on read-back. A data: URI also works but never normalises and is the form most
+    /// likely to be rejected later, so the CDN URL is used.
+    /// </summary>
+    private static JsonObject TaskIcon() => new()
+    {
+        ["type"] = "external",
+        ["external"] = new JsonObject { ["url"] = NotionIds.TaskIconUrl },
     };
 
     private static JsonObject TextObject(string content) => new()
