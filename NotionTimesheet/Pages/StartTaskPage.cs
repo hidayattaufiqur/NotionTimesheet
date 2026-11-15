@@ -1,3 +1,4 @@
+using NotionTimesheet.Commands;
 using NotionTimesheet.Models;
 using NotionTimesheet.Services;
 using Microsoft.CommandPalette.Extensions;
@@ -6,10 +7,9 @@ using Microsoft.CommandPalette.Extensions.Toolkit;
 namespace NotionTimesheet.Pages;
 
 /// <summary>
-/// Top-level "Start task" command. It is a searchable project picker first: Command Palette's
-/// own search box filters this list as you type (e.g. "13396" narrows to that one project),
-/// which an Adaptive Card choice set cannot do. Picking a row opens the task form with the
-/// project already linked.
+/// Top-level "Start task" command. Hub page with two paths: "New task" opens the searchable
+/// project picker (which then opens the task form), and every unstarted Tasks Kanban row
+/// (Do Later / Do Today / In-Progress with no Start Time) can be started directly.
 /// </summary>
 internal sealed partial class StartTaskPage : ListPage
 {
@@ -21,7 +21,7 @@ internal sealed partial class StartTaskPage : ListPage
         Name = "Open";
         Title = "Start task";
         Icon = new IconInfo("\uE768"); // Play
-        PlaceholderText = "Search FDD/Projects — typing filters this list";
+        PlaceholderText = "Search unstarted tasks, or pick New task to create one";
     }
 
     public override IListItem[] GetItems()
@@ -41,76 +41,77 @@ internal sealed partial class StartTaskPage : ListPage
         }
 
         var client = new NotionClient(resolution.Token!);
+        var items = new List<IListItem>
+        {
+            new ListItem(new ProjectPickerPage(settings))
+            {
+                Title = "New task…",
+                Subtitle = "Pick a project, then create a Tasks Kanban row",
+                Icon = new IconInfo("\uE710"), // Add
+                Section = "New",
+            },
+        };
 
-        IReadOnlyList<ProjectChoice> projects = [];
-        string? warning = null;
+        IReadOnlyList<OpenTask> startable = [];
         try
         {
-            projects = client.ListProjects();
+            startable = client.QueryStartableTasks();
         }
         catch (Exception ex)
         {
-            warning = $"Project list unavailable ({NotionErrors.Describe(ex)}) — you can still start without a project.";
-        }
-
-        var items = new List<IListItem>();
-
-        var recents = RecentProjectsStore.Load()
-            .Select(recent => projects.FirstOrDefault(p => string.Equals(p.Id, recent.Id, StringComparison.OrdinalIgnoreCase)))
-            .Where(found => found is not null)
-            .Cast<ProjectChoice>()
-            .ToList();
-
-        foreach (var recent in recents)
-        {
-            items.Add(new ListItem(new StartTaskFormPage(settings, client, projects, recent, createNewProject: false))
+            items.Add(new ListItem(new NoOpCommand())
             {
-                Title = recent.Title,
-                Subtitle = "Recent · link this FDD/Project",
-                Icon = new IconInfo("\uE81C"), // History
-                Section = "Recent",
+                Title = "Existing tasks unavailable",
+                Subtitle = NotionErrors.Truncate(NotionErrors.Describe(ex), 300),
+                Icon = new IconInfo("\uE7BA"),
             });
+
+            return [.. items];
         }
 
-        items.Add(new ListItem(new StartTaskFormPage(settings, client, projects, null, createNewProject: false))
-        {
-            Title = "No project",
-            Subtitle = "Start the task without an FDD/Project link",
-            Icon = new IconInfo("\uE768"),
-            Section = "Start",
-        });
-
-        items.Add(new ListItem(new StartTaskFormPage(settings, client, projects, null, createNewProject: true))
-        {
-            Title = "Create new project…",
-            Subtitle = "Adds a page to FDD/Projects, then links it to the task",
-            Icon = new IconInfo("\uE710"), // Add
-            Section = "Start",
-        });
-
-        if (warning is not null)
+        if (startable.Count == 0)
         {
             items.Add(new ListItem(new NoOpCommand())
             {
-                Title = "Project list unavailable",
-                Subtitle = NotionErrors.Truncate(warning, 300),
-                Icon = new IconInfo("\uE7BA"),
+                Title = "No unstarted tasks",
+                Subtitle = "Every Do Later / Do Today row already has a Start Time",
+                Icon = new IconInfo("\uE946"), // Info
+                Section = "Start existing",
             });
+
+            return [.. items];
         }
 
-        foreach (var project in projects.Where(p => recents.All(r => !string.Equals(r.Id, p.Id, StringComparison.OrdinalIgnoreCase))))
+        foreach (var task in startable)
         {
-            items.Add(new ListItem(new StartTaskFormPage(settings, client, projects, project, createNewProject: false))
+            items.Add(new ListItem(new StartExistingTaskCommand(client, task, Refresh))
             {
-                Title = project.Title,
-                Subtitle = "Link this FDD/Project",
-                Icon = new IconInfo("\uE8B7"), // Folder
-                Section = "All projects",
+                Title = task.Title,
+                Subtitle = BuildSubtitle(task),
+                Icon = new IconInfo("\uE768"),
+                Section = "Start existing",
             });
         }
 
         return [.. items];
     }
+
+    private static string BuildSubtitle(OpenTask task)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(task.Status))
+        {
+            parts.Add(task.Status);
+        }
+
+        if (!string.IsNullOrWhiteSpace(task.Category))
+        {
+            parts.Add(task.Category);
+        }
+
+        parts.Add("Start this task");
+        return string.Join(" · ", parts);
+    }
+
+    private void Refresh() => RaiseItemsChanged();
 }
-
-

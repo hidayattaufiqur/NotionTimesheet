@@ -103,11 +103,100 @@ internal sealed class NotionClient
                     Title: PageTitle(obj) ?? "(untitled)",
                     StartTime: startTime,
                     Category: obj["properties"]?["Category"]?["select"]?["name"]?.GetValue<string>(),
-                    Url: obj["url"]?.GetValue<string>()));
+                    Url: obj["url"]?.GetValue<string>(),
+                    Status: obj["properties"]?["Status"]?["status"]?["name"]?.GetValue<string>()));
             }
         }
 
         return tasks;
+    }
+
+    /// <summary>
+    /// Rows that can be started: Do Later / Do Today / In-Progress with no Start Time.
+    /// These are the backlog rows the Start page offers alongside creating a new task.
+    /// </summary>
+    public IReadOnlyList<OpenTask> QueryStartableTasks(CancellationToken cancellationToken = default)
+    {
+        var payload = new JsonObject
+        {
+            ["filter"] = new JsonObject
+            {
+                ["and"] = new JsonArray(
+                    new JsonObject
+                    {
+                        ["or"] = new JsonArray(
+                            StatusFilter("Do Later"),
+                            StatusFilter("Do Today"),
+                            StatusFilter("In-Progress")),
+                    },
+                    new JsonObject
+                    {
+                        ["property"] = "Start Time",
+                        ["date"] = new JsonObject { ["is_empty"] = true },
+                    }),
+            },
+            ["sorts"] = new JsonArray(new JsonObject
+            {
+                ["timestamp"] = "last_edited_time",
+                ["direction"] = "descending",
+            }),
+            ["page_size"] = 50,
+        };
+
+        var response = SendAsync(HttpMethod.Post, $"/data_sources/{NotionIds.TasksKanbanDataSourceId}/query", payload, cancellationToken)
+            .GetAwaiter().GetResult();
+
+        var tasks = new List<OpenTask>();
+        if (response["results"] is JsonArray results)
+        {
+            foreach (var page in results)
+            {
+                if (page is not JsonObject obj || obj["in_trash"]?.GetValue<bool>() == true)
+                {
+                    continue;
+                }
+
+                tasks.Add(new OpenTask(
+                    PageId: obj["id"]?.GetValue<string>() ?? string.Empty,
+                    Title: PageTitle(obj) ?? "(untitled)",
+                    StartTime: DateStart(obj["properties"]?["Start Time"]),
+                    Category: obj["properties"]?["Category"]?["select"]?["name"]?.GetValue<string>(),
+                    Url: obj["url"]?.GetValue<string>(),
+                    Status: obj["properties"]?["Status"]?["status"]?["name"]?.GetValue<string>()));
+            }
+        }
+
+        return tasks;
+    }
+
+    /// <summary>
+    /// Starts an existing backlog row: stamps Start Time = now, moves it to In-Progress so it
+    /// shows up on the Finish page, and rolls Timeline Date / Month forward to today.
+    /// Single PATCH: invoking twice rewrites the same fields.
+    /// </summary>
+    public async Task StartExistingTaskAsync(
+        string pageId,
+        DateTimeOffset start,
+        string? monthPageId,
+        CancellationToken cancellationToken = default)
+    {
+        var properties = new JsonObject
+        {
+            ["Status"] = new JsonObject { ["status"] = new JsonObject { ["name"] = "In-Progress" } },
+            ["Start Time"] = DateProperty(Clock.Stamp(start)),
+            ["Timeline Date"] = DateProperty(Clock.Day(start)),
+        };
+
+        if (!string.IsNullOrWhiteSpace(monthPageId))
+        {
+            properties[NotionIds.MonthRelationProperty] = new JsonObject
+            {
+                ["relation"] = new JsonArray(new JsonObject { ["id"] = monthPageId }),
+            };
+        }
+
+        var payload = new JsonObject { ["properties"] = properties };
+        await SendAsync(new HttpMethod("PATCH"), $"/pages/{pageId}", payload, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<CreatedTask> CreateTaskAsync(

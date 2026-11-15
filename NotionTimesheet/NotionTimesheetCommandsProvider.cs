@@ -19,7 +19,7 @@ public partial class NotionTimesheetCommandsProvider : CommandProvider
         var start = new CommandItem(new StartTaskPage(settingsManager))
         {
             Title = "Start task",
-            Subtitle = "Create a Tasks Kanban row with Start Time = now",
+            Subtitle = "Start an unstarted row, or create a new Tasks Kanban row",
             Icon = new IconInfo("\uE768"), // Play
         };
 

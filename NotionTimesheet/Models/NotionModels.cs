@@ -1,12 +1,13 @@
 namespace NotionTimesheet.Models;
 
-/// <summary>A row returned by the In-Progress / Do Today query.</summary>
+/// <summary>A row returned by the Tasks Kanban queries.</summary>
 internal sealed record OpenTask(
     string PageId,
     string Title,
     string? StartTime,
     string? Category,
-    string? Url)
+    string? Url,
+    string? Status = null)
 {
     public bool HasStartTime => !string.IsNullOrWhiteSpace(StartTime);
 }

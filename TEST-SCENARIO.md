@@ -15,8 +15,11 @@ Before you start: `%LOCALAPPDATA%\CmdPalNotion\token.txt` must exist with the in
 ## Test 1 — Start task creates a correct row
 
 1. `Alt+Space` → `start task` → `Enter`.
-2. You get the **project list** first: `No project`, `Create new project…`, then all FDD/Project
-   pages. Type `13396` in the search box → the list narrows to
+2. You get the **Start hub** first: `New task…` at the top, then every unstarted row
+   (`Do Later` / `Do Today` / `In-Progress` with no Start Time — e.g. `NeoMax - GAP-019
+   Label-Box: kickoff and skeleton [Do Later]`). Type to filter, `Enter` on a row to start
+   it: `Start Time` = now, Status → `In-Progress`, Timeline Date/Month roll to today.
+3. For a brand-new row, pick **New task…** → project list: type `13396` in the search box → the list narrows to
    `CR 13396 - NOR - EHF - Equinor Feedback`. Press `Enter`.
 3. The form opens with `Project: CR 13396 - NOR - EHF - Equinor Feedback` at the top, the
    **Task title already filled with that project title**, and the other fields:
