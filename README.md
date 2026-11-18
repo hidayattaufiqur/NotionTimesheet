@@ -21,6 +21,10 @@ Notes on the Start task card:
   task title already says that — just add detail if you want. `No project` starts empty; in
   `Create new project…` mode the title falls back to the new project name when left blank. A
   restored draft still wins, so a retry keeps what you typed.
+- **Double-submit guard**: the palette can deliver one click as two submits a minute apart, which
+  used to create two identical rows. An identical submit within 120 seconds now reuses the first
+  row instead of POSTing again (same for Pause). Intentionally creating the same task twice in a
+  row still works — just wait two minutes between them.
 - **Recent projects** are pinned at the top of the picker (`Section: Recent`, newest first, max 3,
   persisted in `%LOCALAPPDATA%\CmdPalNotion\recent-projects.json`) and removed from the full list
   below to avoid duplicates.

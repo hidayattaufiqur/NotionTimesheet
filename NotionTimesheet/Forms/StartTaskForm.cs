@@ -19,6 +19,15 @@ internal sealed partial class StartTaskForm : FormContent
     private readonly ProjectChoice? project;
     private readonly bool createNewProject;
 
+    /// <summary>
+    /// Double-submit guard: the palette can deliver SubmitForm twice for one click
+    /// (double-click, Enter+click). Two identical payloads minutes apart created two rows,
+    /// so a repeat within the window reuses the first result instead of POSTing again.
+    /// </summary>
+    private static readonly object SubmitGate = new();
+    private static readonly Dictionary<string, (DateTimeOffset At, CreatedTask Created, string Message)> RecentSubmits = new();
+    private static readonly TimeSpan SubmitDedupeWindow = TimeSpan.FromSeconds(120);
+
     public StartTaskForm(
         NotionClient client,
         string defaultStatus,
@@ -82,6 +91,26 @@ internal sealed partial class StartTaskForm : FormContent
         var priority = Pick(ReadString(inputs, "priority"), NotionIds.Priorities, NotionIds.DefaultPriority);
         var category = Pick(ReadString(inputs, "category"), NotionIds.Categories, NotionIds.DefaultCategory);
         var status = Pick(ReadString(inputs, "status"), NotionIds.Statuses, defaultStatus);
+
+        // Double-submit guard, checked before any POST (including the project create below):
+        // the palette can deliver one click as two submits, which used to create two rows.
+        var submitKey = string.Join("\0",
+            title, description ?? string.Empty, priority, category, status,
+            project?.Id ?? string.Empty, newProjectTitle ?? string.Empty, createNewProject);
+
+        lock (SubmitGate)
+        {
+            PruneSubmits();
+            if (RecentSubmits.TryGetValue(submitKey, out var previous))
+            {
+                ExtensionHost.LogMessage($"NotionTimesheet: duplicate submit ignored, reusing task {previous.Created.PageId}.");
+                return CommandResult.ShowToast(new ToastArgs
+                {
+                    Message = previous.Message,
+                    Result = CommandResult.GoHome(),
+                });
+            }
+        }
 
         var start = Clock.Now();
 
@@ -199,6 +228,12 @@ internal sealed partial class StartTaskForm : FormContent
 
             message = NotionErrors.Truncate(message, 500);
             ExtensionHost.LogMessage($"NotionTimesheet: created task {created.PageId} \"{title}\" project={projectId ?? "none"} month={monthId ?? "none"}");
+            lock (SubmitGate)
+            {
+                PruneSubmits();
+                RecentSubmits[submitKey] = (DateTimeOffset.UtcNow, created, message);
+            }
+
             ShowStatus(message, MessageState.Success);
             return CommandResult.ShowToast(new ToastArgs
             {
@@ -209,6 +244,15 @@ internal sealed partial class StartTaskForm : FormContent
         catch (Exception ex)
         {
             return Fail($"Nothing was created in Notion. {NotionErrors.Describe(ex)}");
+        }
+    }
+
+    private static void PruneSubmits()
+    {
+        var cutoff = DateTimeOffset.UtcNow - SubmitDedupeWindow;
+        foreach (var key in RecentSubmits.Where(kv => kv.Value.At < cutoff).Select(kv => kv.Key).ToList())
+        {
+            RecentSubmits.Remove(key);
         }
     }
 

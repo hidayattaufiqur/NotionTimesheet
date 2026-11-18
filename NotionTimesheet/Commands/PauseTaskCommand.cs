@@ -29,6 +29,20 @@ internal sealed partial class PauseTaskCommand : InvokableCommand
     {
         var now = Clock.Now();
 
+        lock (PauseGate)
+        {
+            PrunePauses();
+            if (RecentPauses.TryGetValue(task.PageId, out var previous))
+            {
+                ExtensionHost.LogMessage($"NotionTimesheet: duplicate pause ignored for {task.PageId}, reusing copy {previous.Created.PageId}.");
+                return CommandResult.ShowToast(new ToastArgs
+                {
+                    Message = previous.Message,
+                    Result = CommandResult.KeepOpen(),
+                });
+            }
+        }
+
         try
         {
             var queued = client.PauseTaskAsync(task.PageId, now).GetAwaiter().GetResult();
@@ -40,9 +54,16 @@ internal sealed partial class PauseTaskCommand : InvokableCommand
                 message += $" {queued.Url}";
             }
 
+            message = NotionErrors.Truncate(message, 400);
+            lock (PauseGate)
+            {
+                PrunePauses();
+                RecentPauses[task.PageId] = (DateTimeOffset.UtcNow, queued, message);
+            }
+
             return CommandResult.ShowToast(new ToastArgs
             {
-                Message = NotionErrors.Truncate(message, 400),
+                Message = message,
                 Result = CommandResult.KeepOpen(),
             });
         }
@@ -53,6 +74,23 @@ internal sealed partial class PauseTaskCommand : InvokableCommand
                 Message = NotionErrors.Truncate($"Notion did not accept the pause. {NotionErrors.Describe(ex)}", 500),
                 Result = CommandResult.KeepOpen(),
             });
+        }
+    }
+
+    /// <summary>
+    /// Double-invoke guard: pausing twice would finish once but queue two copies.
+    /// Same 120-second window as the Start form guard.
+    /// </summary>
+    private static readonly object PauseGate = new();
+    private static readonly Dictionary<string, (DateTimeOffset At, CreatedTask Created, string Message)> RecentPauses = new();
+    private static readonly TimeSpan PauseDedupeWindow = TimeSpan.FromSeconds(120);
+
+    private static void PrunePauses()
+    {
+        var cutoff = DateTimeOffset.UtcNow - PauseDedupeWindow;
+        foreach (var key in RecentPauses.Where(kv => kv.Value.At < cutoff).Select(kv => kv.Key).ToList())
+        {
+            RecentPauses.Remove(key);
         }
     }
 }
