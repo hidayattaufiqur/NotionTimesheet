@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
+using Microsoft.CommandPalette.Extensions.Toolkit;
 using NotionTimesheet.Models;
 
 namespace NotionTimesheet.Services;
@@ -559,6 +560,87 @@ internal sealed class NotionClient
         }
 
         target[property] = new JsonObject { ["relation"] = copy };
+    }
+
+    /// <summary>
+    /// Server-side double-submit backstop: finds a non-trashed row with exactly this title
+    /// created after <paramref name="since"/>. Unlike the in-memory guard this survives process
+    /// restarts and catches repeats past the memory window. Never throws: on any API error it
+    /// returns null so the normal create path proceeds.
+    /// </summary>
+    public async Task<CreatedTask?> FindRecentByTitleAsync(
+        string title,
+        DateTimeOffset since,
+        bool onlyUnstarted,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var titleProperty = await FindTitlePropertyAsync(NotionIds.TasksKanbanDataSourceId, cancellationToken).ConfigureAwait(false);
+
+            var payload = new JsonObject
+            {
+                ["filter"] = new JsonObject
+                {
+                    ["and"] = new JsonArray(
+                        new JsonObject
+                        {
+                            ["property"] = titleProperty,
+                            ["title"] = new JsonObject { ["equals"] = title },
+                        },
+                        new JsonObject
+                        {
+                            ["timestamp"] = "created_time",
+                            ["created_time"] = new JsonObject { ["after"] = since.UtcDateTime.ToString("o") },
+                        }),
+                },
+                ["sorts"] = new JsonArray(new JsonObject
+                {
+                    ["timestamp"] = "created_time",
+                    ["direction"] = "descending",
+                }),
+                ["page_size"] = 5,
+            };
+
+            var response = await SendAsync(
+                HttpMethod.Post,
+                $"/data_sources/{NotionIds.TasksKanbanDataSourceId}/query",
+                payload,
+                cancellationToken).ConfigureAwait(false);
+
+            if (response["results"] is not JsonArray results)
+            {
+                return null;
+            }
+
+            foreach (var row in results.OfType<JsonObject>())
+            {
+                if (row["in_trash"]?.GetValue<bool>() == true)
+                {
+                    continue;
+                }
+
+                if (onlyUnstarted && !string.IsNullOrWhiteSpace(DateStart(row["properties"]?["Start Time"])))
+                {
+                    continue;
+                }
+
+                var id = row["id"]?.GetValue<string>();
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    continue;
+                }
+
+                return new CreatedTask(id, row["url"]?.GetValue<string>());
+            }
+
+            return null;
+        }
+        catch (Exception ex)
+        {
+            ExtensionHost.LogMessage($"NotionTimesheet: recent-title lookup failed, proceeding with create: {NotionErrors.Describe(ex)}");
+            return null;
+        }
     }
 
     private async Task<string> FindTitlePropertyAsync(string dataSourceId, CancellationToken cancellationToken)

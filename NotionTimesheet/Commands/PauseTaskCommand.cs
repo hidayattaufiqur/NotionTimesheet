@@ -32,6 +32,19 @@ internal sealed partial class PauseTaskCommand : InvokableCommand
         lock (PauseGate)
         {
             PrunePauses();
+            // An identical pause still being processed (double-invoke): wait for it, then reuse.
+            var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(30);
+            while (!RecentPauses.ContainsKey(task.PageId) && InFlightPauses.Contains(task.PageId))
+            {
+                if (DateTimeOffset.UtcNow >= deadline)
+                {
+                    break;
+                }
+
+                Monitor.Wait(PauseGate, TimeSpan.FromSeconds(5));
+                PrunePauses();
+            }
+
             if (RecentPauses.TryGetValue(task.PageId, out var previous))
             {
                 ExtensionHost.LogMessage($"NotionTimesheet: duplicate pause ignored for {task.PageId}, reusing copy {previous.Created.PageId}.");
@@ -41,10 +54,45 @@ internal sealed partial class PauseTaskCommand : InvokableCommand
                     Result = CommandResult.KeepOpen(),
                 });
             }
+
+            InFlightPauses.Add(task.PageId);
         }
 
         try
         {
+            // Server-side backstop: if an unstarted copy of this title was queued in the last
+            // 10 minutes, the first pause already went through — finish (idempotent PATCH)
+            // and reuse the copy instead of POSTing another.
+            var existingCopy = client.FindRecentByTitleAsync(
+                task.Title,
+                DateTimeOffset.UtcNow - TimeSpan.FromMinutes(10),
+                onlyUnstarted: true).GetAwaiter().GetResult();
+
+            if (existingCopy is not null)
+            {
+                client.FinishTaskAsync(task.PageId, hadStartTime: true, now).GetAwaiter().GetResult();
+                refresh();
+
+                ExtensionHost.LogMessage($"NotionTimesheet: server-side pause duplicate found, reusing copy {existingCopy.PageId}.");
+                var reuseMessage = $"\"{task.Title}\" was already paused — reusing the queued copy instead of creating a duplicate.";
+                if (!string.IsNullOrWhiteSpace(existingCopy.Url))
+                {
+                    reuseMessage += $" {existingCopy.Url}";
+                }
+
+                reuseMessage = NotionErrors.Truncate(reuseMessage, 400);
+                lock (PauseGate)
+                {
+                    RecentPauses[task.PageId] = (DateTimeOffset.UtcNow, existingCopy, reuseMessage);
+                }
+
+                return CommandResult.ShowToast(new ToastArgs
+                {
+                    Message = reuseMessage,
+                    Result = CommandResult.KeepOpen(),
+                });
+            }
+
             var queued = client.PauseTaskAsync(task.PageId, now).GetAwaiter().GetResult();
             refresh();
 
@@ -75,6 +123,14 @@ internal sealed partial class PauseTaskCommand : InvokableCommand
                 Result = CommandResult.KeepOpen(),
             });
         }
+        finally
+        {
+            lock (PauseGate)
+            {
+                InFlightPauses.Remove(task.PageId);
+                Monitor.PulseAll(PauseGate);
+            }
+        }
     }
 
     /// <summary>
@@ -83,6 +139,7 @@ internal sealed partial class PauseTaskCommand : InvokableCommand
     /// </summary>
     private static readonly object PauseGate = new();
     private static readonly Dictionary<string, (DateTimeOffset At, CreatedTask Created, string Message)> RecentPauses = new();
+    private static readonly HashSet<string> InFlightPauses = [];
     private static readonly TimeSpan PauseDedupeWindow = TimeSpan.FromSeconds(120);
 
     private static void PrunePauses()

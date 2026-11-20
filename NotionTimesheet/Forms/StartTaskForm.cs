@@ -26,6 +26,7 @@ internal sealed partial class StartTaskForm : FormContent
     /// </summary>
     private static readonly object SubmitGate = new();
     private static readonly Dictionary<string, (DateTimeOffset At, CreatedTask Created, string Message)> RecentSubmits = new();
+    private static readonly HashSet<string> InFlightSubmits = [];
     private static readonly TimeSpan SubmitDedupeWindow = TimeSpan.FromSeconds(120);
 
     public StartTaskForm(
@@ -101,6 +102,20 @@ internal sealed partial class StartTaskForm : FormContent
         lock (SubmitGate)
         {
             PruneSubmits();
+            // If an identical submit is still being processed (double-click), wait for it
+            // instead of POSTing a second row, then reuse its result.
+            var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(30);
+            while (!RecentSubmits.ContainsKey(submitKey) && InFlightSubmits.Contains(submitKey))
+            {
+                if (DateTimeOffset.UtcNow >= deadline)
+                {
+                    break;
+                }
+
+                Monitor.Wait(SubmitGate, TimeSpan.FromSeconds(5));
+                PruneSubmits();
+            }
+
             if (RecentSubmits.TryGetValue(submitKey, out var previous))
             {
                 ExtensionHost.LogMessage($"NotionTimesheet: duplicate submit ignored, reusing task {previous.Created.PageId}.");
@@ -110,9 +125,61 @@ internal sealed partial class StartTaskForm : FormContent
                     Result = CommandResult.GoHome(),
                 });
             }
+
+            InFlightSubmits.Add(submitKey);
         }
 
-        var start = Clock.Now();
+        try
+        {
+            return SubmitFormCreate(title, description, priority, category, status, newProjectTitle, submitKey);
+        }
+        finally
+        {
+            lock (SubmitGate)
+            {
+                InFlightSubmits.Remove(submitKey);
+                Monitor.PulseAll(SubmitGate);
+            }
+        }
+    }
+
+    private CommandResult SubmitFormCreate(
+        string title,
+        string? description,
+        string priority,
+        string category,
+        string status,
+        string? newProjectTitle,
+        string submitKey)
+    {
+        var serverDuplicate = client.FindRecentByTitleAsync(
+                title,
+                DateTimeOffset.UtcNow - TimeSpan.FromMinutes(10),
+                onlyUnstarted: false).GetAwaiter().GetResult();
+
+            if (serverDuplicate is not null)
+            {
+                ExtensionHost.LogMessage($"NotionTimesheet: server-side duplicate found, reusing task {serverDuplicate.PageId}.");
+                var reuseMessage = $"\"{title}\" was just created — reusing the existing row instead of creating a duplicate.";
+                if (!string.IsNullOrWhiteSpace(serverDuplicate.Url))
+                {
+                    reuseMessage += $" {serverDuplicate.Url}";
+                }
+
+                reuseMessage = NotionErrors.Truncate(reuseMessage, 500);
+                lock (SubmitGate)
+                {
+                    RecentSubmits[submitKey] = (DateTimeOffset.UtcNow, serverDuplicate, reuseMessage);
+                }
+
+                return CommandResult.ShowToast(new ToastArgs
+                {
+                    Message = reuseMessage,
+                    Result = CommandResult.GoHome(),
+                });
+            }
+
+            var start = Clock.Now();
 
         // Project was chosen on the picker page; in "create new" mode the typed name decides.
         // Nothing is created if this step fails.
